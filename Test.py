@@ -1,11 +1,7 @@
-import numpy as np
+import tensorflow as tf
 
-x = np.array([1, 2])
-y = np.array([3, 5, 6])
 
-X, Y = np.meshgrid(x, y)
-print(X)
-
-percentiles=[.0001, .001, .01]
-percentiles+= [1-p for p in percentiles]
-print(percentiles)
+if tf.config.list_physical_devices('GPU'):
+    print("GPU is available")
+else:
+    print("GPU is NOT available")

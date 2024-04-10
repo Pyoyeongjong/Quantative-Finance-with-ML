@@ -1,12 +1,20 @@
-import keras
-import numpy as np
 import tensorflow as tf
+import numpy as np
+import keras
 from keras import layers
 from keras.optimizers import Adam
 from keras.models import Sequential
 from replaybuffer import ReplayBuffer
 from bitcoinenv import BitcoinTradingEnv
 from gym.spaces import Discrete, Space
+import matplotlib.pyplot as plt
+
+import time as tt
+import os
+
+# 손절가, 익절가, 양
+low_arr = np.asarray([0.01, 0.08 * 0.01 * 2, 0.3])
+high_arr = np.asarray([0.2, 0.2, 0.7])
 
 class Actor:
     def __init__(self, state_size, action_size, action_low, action_high):
@@ -18,8 +26,8 @@ class Actor:
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
-        out = layers.Dense(400, activation="relu")(states)
-        out = layers.Dense(300, activation="relu")(out)
+        out = layers.Dense(128, activation="relu")(states)
+        out = layers.Dense(64, activation="relu")(out)
         raw_actions = layers.Dense(self.action_size, activation="tanh")(out)
         # raw action을 action bound에 맞춰준 것.
         actions = layers.Lambda(lambda x: (x *(self.action_high - self.action_low) / 2) + (self.action_high + self.action_low) / 2)(raw_actions)
@@ -37,19 +45,15 @@ class Critic:
         states = keras.Input(shape=(self.state_size,))
         actions = keras.Input(shape=(self.action_size,))
         out = layers.Concatenate()([states, actions])
-        out = layers.Dense(400, activation="relu")(out)
-        out = layers.Dense(300, activation="relu")(out)
+        out = layers.Dense(128, activation="relu")(out)
+        out = layers.Dense(64, activation="relu")(out)
         q_values = layers.Dense(1, activation=None)(out)
-        model = tf.keras.Model(inputs=[states, actions], outputs=q_values)
+        model = keras.Model(inputs=[states, actions], outputs=q_values)
         return model
 
 
 def ou_noise(x, rho=0.15, mu=0, dt=1e-1, sigma=0.2, dim=1):
     return x + rho*(mu-x)*dt + sigma*np.sqrt(dt)*np.sqrt(dt)*np.random.normal(size=dim)
-
-
-low_arr = np.asarray([0, 0.08 * 0.01, 0])
-high_arr = np.asarray([0.9, 1000, 1])
 
 class DDPGagent:
 
@@ -59,7 +63,7 @@ class DDPGagent:
         self.BATCH_SIZE = 32
         self.BUFFER_SIZE = 20000
         self.ACTOR_LEARNING_RATE = 0.0001
-        self.CRITIC_LEARNING_RATE = 0.001
+        self.CRITIC_LEARNING_RATE = 0.0001
         self.TAU = 0.001
 
         self.state_dim = state_dim# env.observation + ddqn action
@@ -102,6 +106,7 @@ class DDPGagent:
             loss = tf.reduce_mean(tf.square(q - td_targets))  # q - td_targets 을 통해 loss 계산
 
         grads = tape.gradient(loss, self.critic.model.trainable_variables)  # loss로 gradient 계산
+        grads = [(tf.clip_by_value(grad, -1.0, 1.0)) for grad in grads]
         self.critic_opt.apply_gradients(zip(grads, self.critic.model.trainable_variables))  # critic 조정
 
     def actor_learn(self, states):
@@ -111,6 +116,8 @@ class DDPGagent:
             loss = -tf.reduce_mean(critic_q)  # critic_q에 대한 loss계산
 
         grads = tape.gradient(loss, self.actor.model.trainable_variables)
+        # Gradient Cliping
+        grads = [(tf.clip_by_value(grad, -1.0, 1.0)) for grad in grads]
         self.actor_opt.apply_gradients(zip(grads, self.actor.model.trainable_variables))
 
     def td_target(self, rewards, q_values, dones):
@@ -126,10 +133,8 @@ class DDPGagent:
     def act(self, state, act):
         # 이거 해야함
         real_state = np.append(state, act)
-        print(real_state)
-        real_state = tf.expand_dims(real_state, axis=0)
+        # real_state = tf.expand_dims(real_state, axis=0)
         action = self.actor.model(tf.convert_to_tensor([real_state], dtype=tf.float32))
-        print(action)
         return action
 
 class DDQNagent:
@@ -141,7 +146,7 @@ class DDQNagent:
         self.epsilon = 1.0
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
-        self.learning_rate = 0.001
+        self.learning_rate = 0.0001
         self.TAU = 0.01
 
         # model parameters
@@ -193,7 +198,7 @@ class DDQNagent:
         env = env
         # 이거 해야함
         if np.random.random() <= self.epsilon:
-            return env.action_space.sample()
+            return env.action_space.sample()[0]
         else:
             qs = self.model(tf.convert_to_tensor(state, dtype=tf.float32))
 
@@ -203,9 +208,11 @@ class DDQNagent:
 class Hypridagent:
 
     def __init__(self):
-        self.env = BitcoinTradingEnv()
-        self.DDQN = DDQNagent(self.env.observation_space.shape[0], 3)
+        self.env = BitcoinTradingEnv(low_arr=low_arr, high_arr=high_arr)
+        self.DDQN = DDQNagent(self.env.observation_space.shape[0], 3) # 관망을 하면 왜 삑나지
+        print("[Hybrid init]: DDQN OK ")
         self.DDPG = DDPGagent(self.env.observation_space.shape[0] + 1, 3)
+        print("[Hybrid init]: DDPG OK ")
         self.BUFFER_SIZE = 20000
         self.BATCH_SIZE = 32
         # Replay Buffer
@@ -213,8 +220,10 @@ class Hypridagent:
         self.ddpgbuffer = ReplayBuffer(self.BUFFER_SIZE)
 
         self.save_epi_reward = []
+        print("[Hybrid init]: Hybrid Init OK ")
 
     def train(self, max_episode_num):
+        print("[Train]: train start")
 
         self.DDQN.update_target_network(1.0)
         self.DDPG.update_target_network(1.0)
@@ -231,11 +240,10 @@ class Hypridagent:
             state = self.env.reset()
 
             while not done:
+                start = tt.time()
                 # state에 따른 행동 뽑아오기
                 ddqn_act = self.DDQN.act(state, self.env)
-                print(ddqn_act[0])
-                ddpg_act = self.DDPG.act(state, ddqn_act[0])
-                print(ddpg_act)
+                ddpg_act = self.DDPG.act(state, ddqn_act)
                 noise = ou_noise(pre_noise, dim=self.DDPG.action_dim)
                 ddpg_act = np.clip(ddpg_act + noise, self.DDPG.action_low, self.DDPG.action_high)
 
@@ -245,18 +253,31 @@ class Hypridagent:
                 next_state, reward, done, _ = self.env.step(action) # env의 action 입력값은 [] 리스트
 
                 # reward 손좀 보기
+                if reward == 0:
+                    continue
                 train_reward = reward
+                # 만약 reward가 0이면 버퍼에 넣으면 안된다!!!!!!!!!
+            
 
                 # 버퍼에 기록하기 - DDQN
                 self.ddqnbuffer.add_buffer(state, action[0], train_reward, next_state, done) # 여기서 next_state가 학습에 영향을 줄까??
-
+                # print("[DDQN BUFFER]: ", state, action[0], train_reward, next_state, done)
                 # 버퍼에 기록하기 - DDPG
-                ddpg_next_act = self.DDQN.act(next_state)
+                ddpg_next_act = self.DDQN.act(next_state, self.env)
+                
                 # state를 이렇게 저장해도 되는가?
-                self.ddpgbuffer.add_buffer([state, action[0]], action[1], train_reward, [next_state, ddpg_next_act], done)
+
+                if ddqn_act != 2:
+                    self.ddpgbuffer.add_buffer(np.append(state, action[0]), action[1][0], train_reward, np.append(next_state, ddpg_next_act), done)
+                # print("[DDPG BUFFER]: ", "[", state, action[0],"]",action[1],train_reward, "[",next_state,ddpg_next_act,"]",done)
+
+                # print("\n\nacting time=", tt.time() - start)
 
                 if self.ddqnbuffer.buffer_count() > 100 and self.ddpgbuffer.buffer_count() > 100:
 
+                    start = tt.time()
+
+                    # print("Sample Batch 추출 중...")
                     # DDQN epsilon decaying
                     if self.DDQN.epsilon < self.DDQN.epsilon_min:
                         self.DDQN.epsilon *= self.DDQN.epsilon_decay
@@ -271,16 +292,21 @@ class Hypridagent:
                     # target-Q value 예측
                     ddqn_target_qs = self.DDQN.target_model(tf.convert_to_tensor(next_states1, dtype=tf.float32))
                     # TD target 계산
-                    y_i = self.DDQN.td_target(rewards1, ddqn_target_qs.numpy(), max_a, dones1)
+                    y_i1 = self.DDQN.td_target(rewards1, ddqn_target_qs.numpy(), max_a, dones1)
                     # machine learning
-                    self.DDQN.model_learn(tf.convert_to_tensor(next_states1, dtype=tf.float32),
+                    self.DDQN.model_learn(tf.convert_to_tensor(states1, dtype=tf.float32),
                                           actions1,
-                                          tf.convert_to_tensor(y_i, dtype=tf.float32))
+                                          tf.convert_to_tensor(y_i1, dtype=tf.float32))
                     # target network 업데이트
                     self.DDQN.update_target_network(self.DDQN.TAU)
 
                     # replay buffer로부터 sample 뽑기 - DDPG
                     states2, actions2, rewards2, next_states2, dones2 = self.ddpgbuffer.sample_batch(self.BATCH_SIZE)
+                    # print(states2, actions2, rewards2, next_states2, dones2)
+
+                    # print("ddqn learing time=", tt.time() - start)
+
+                    start = tt.time()
 
                     ### DDPG 학습
                     # action[0]도 state에 포함시켜야 한다.
@@ -288,22 +314,25 @@ class Hypridagent:
                     # target-Q value 예측 -> next_state에서는 action[0]이 없는데 어떻게 하지...??
                     # 버퍼를 따로 뽑아야할 듯
 
-                    ddpg_target_qs = self.DDPG.target_critic.model([tf.convert_to_tensor(next_states1, dtype=tf.float32),
+                    ddpg_target_qs = self.DDPG.target_critic.model([tf.convert_to_tensor(next_states2, dtype=tf.float32),
                                                               self.DDPG.target_actor.model(tf.convert_to_tensor(next_states2, dtype=tf.float32))])
                     # TD target 계산
-                    y_i = self.DDPG.td_target(rewards2, ddpg_target_qs.numpy(), dones2)
+                    y_i2 = self.DDPG.td_target(rewards2, ddpg_target_qs.numpy(), dones2)
                     # machine learning
                     self.DDPG.critic_learn(tf.convert_to_tensor(states2, dtype=tf.float32),
                                            tf.convert_to_tensor(actions2, dtype=tf.float32),
-                                           tf.convert_to_tensor(y_i,dtype=tf.float32))
+                                           tf.convert_to_tensor(y_i2,dtype=tf.float32))
                     self.DDPG.actor_learn(tf.convert_to_tensor(states2, dtype=tf.float32))
                     # target network 업데이트
                     self.DDPG.update_target_network(self.DDPG.TAU)
 
+                    # print("ddpg learning time=", tt.time() - start)
+                    
+
                 # 현재 상태 업데이트하기
                 pre_noise = noise
                 state = next_state
-                episode_reward += reward
+                episode_reward += train_reward
                 time += 1
 
             # display each episode
@@ -314,8 +343,31 @@ class Hypridagent:
             ## 각 weight 저장하기
             # 저장 코드
 
+            self.DDPG.actor.model.save_weights("./save_weights/ddpg_actor.weights.h5")
+            self.DDPG.critic.model.save_weights("./save_weights/ddpg_critic.weights.h5")
+            self.DDQN.model.save_weights("./save_weights/ddqn.weights.h5")
+            print("[Save Weight]: ep",ep," save Completed")
+
         # epi_reward 저장
+        
         # 저장코드
+        np.savetxt('./save_weights/train_reward.txt', self.save_epi_reward)
+
+    ## save them to file if done
+    def plot_result(self):
+        plt.plot(self.save_epi_reward)
+        plt.show()
+
+def main():
+
+    max_episode_num = 20
+    agent = Hypridagent()
+
+    agent.train(max_episode_num)
+
+if __name__=='__main__':
+    main()
+
 
 
 

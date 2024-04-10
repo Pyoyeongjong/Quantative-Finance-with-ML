@@ -26,6 +26,14 @@ class ReplayBuffer(object):
         else:
             batch = random.sample(self.buffer, batch_size)
 
+        # np.asarray = 입력 데이터를 numpy 배열로 변환
+        # pc = 0
+        # for i in batch:
+        #     print(i)
+        #     pc += 1
+        #     if pc > 4:
+        #         break
+        
         states = np.asarray([i[0] for i in batch])
         actions = np.asarray([i[1] for i in batch])
         rewards = np.asarray([i[2] for i in batch])

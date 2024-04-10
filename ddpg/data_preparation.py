@@ -24,6 +24,16 @@ import csv
 # Dict 깔끔한 출력
 import pprint
 
+# minmax scaler
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+scale_cols = ['open', 'high', 'low', 'close',
+              'volume', 'sma7', 'sma20', 'sma60',
+              'sma120', 'rsi', 'vol_sma', 'upperband',
+              'lowerband', 'atr', 'macd', 'macdsignal', 'macdhist',
+              'cci', 'adx']
+
+
 kline_interval_mapping = {
     "1w": Client.KLINE_INTERVAL_1WEEK,
     "1d": Client.KLINE_INTERVAL_1DAY,
