@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import keras
-from keras import layers
+from keras import layers, initializers
 from keras.optimizers import Adam
 from keras.models import Sequential
 from replaybuffer import ReplayBuffer
@@ -13,8 +13,8 @@ import time as tt
 import os
 
 # 손절가, 익절가, 양
-low_arr = np.asarray([0.01, 0.08 * 0.01 * 2, 0.3])
-high_arr = np.asarray([0.2, 0.2, 0.7])
+low_arr = np.asarray([0.0005, 0.0005, 0.25])
+high_arr = np.asarray([0.25, 0.5, 0.75])
 
 class Actor:
     def __init__(self, state_size, action_size, action_low, action_high):
@@ -26,8 +26,8 @@ class Actor:
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
-        out = layers.Dense(128, activation="relu")(states)
-        out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(256, activation="relu",kernel_initializer=initializers.HeNormal())(states)
+        out = layers.Dense(128, activation="relu",kernel_initializer=initializers.HeNormal())(out)
         raw_actions = layers.Dense(self.action_size, activation="tanh")(out)
         # raw action을 action bound에 맞춰준 것.
         actions = layers.Lambda(lambda x: (x *(self.action_high - self.action_low) / 2) + (self.action_high + self.action_low) / 2)(raw_actions)
@@ -45,8 +45,8 @@ class Critic:
         states = keras.Input(shape=(self.state_size,))
         actions = keras.Input(shape=(self.action_size,))
         out = layers.Concatenate()([states, actions])
-        out = layers.Dense(128, activation="relu")(out)
-        out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(256, activation="relu",kernel_initializer=initializers.HeNormal())(out)
+        out = layers.Dense(128, activation="relu",kernel_initializer=initializers.HeNormal())(out)
         q_values = layers.Dense(1, activation=None)(out)
         model = keras.Model(inputs=[states, actions], outputs=q_values)
         return model
@@ -62,8 +62,8 @@ class DDPGagent:
         self.GAMMA = 0.95
         self.BATCH_SIZE = 32
         self.BUFFER_SIZE = 20000
-        self.ACTOR_LEARNING_RATE = 0.0001
-        self.CRITIC_LEARNING_RATE = 0.0001
+        self.ACTOR_LEARNING_RATE = 0.000001
+        self.CRITIC_LEARNING_RATE = 0.000001
         self.TAU = 0.001
 
         self.state_dim = state_dim# env.observation + ddqn action
@@ -106,6 +106,7 @@ class DDPGagent:
             loss = tf.reduce_mean(tf.square(q - td_targets))  # q - td_targets 을 통해 loss 계산
 
         grads = tape.gradient(loss, self.critic.model.trainable_variables)  # loss로 gradient 계산
+        # Gradient Cliping
         grads = [(tf.clip_by_value(grad, -1.0, 1.0)) for grad in grads]
         self.critic_opt.apply_gradients(zip(grads, self.critic.model.trainable_variables))  # critic 조정
 
@@ -130,11 +131,13 @@ class DDPGagent:
         return y_k
 
     # state에 따라 행동하는 파트
-    def act(self, state, act):
+    def act(self, state, act, isfull):
+        if isfull == False:
+            return [np.random.uniform(low=[0.01, 0.01, 0.4], high=[0.1, 0.1, 0.6])]
         # 이거 해야함
         real_state = np.append(state, act)
         # real_state = tf.expand_dims(real_state, axis=0)
-        action = self.actor.model(tf.convert_to_tensor([real_state], dtype=tf.float32))
+        action = self.actor.model(tf.convert_to_tensor([real_state], dtype=tf.float64))
         return action
 
 class DDQNagent:
@@ -146,7 +149,7 @@ class DDQNagent:
         self.epsilon = 1.0
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
-        self.learning_rate = 0.0001
+        self.learning_rate = 0.00001
         self.TAU = 0.01
 
         # model parameters
@@ -160,8 +163,8 @@ class DDQNagent:
 
     def _build_model(self):
         model = Sequential()
-        model.add(layers.Dense(32, input_dim=self.state_size, activation="relu"))
-        model.add(layers.Dense(32, activation="relu"))
+        model.add(layers.Dense(256, input_dim=self.state_size, activation="relu",kernel_initializer=initializers.HeNormal()))
+        model.add(layers.Dense(128, activation="relu",kernel_initializer=initializers.HeNormal()))
         model.add(layers.Dense(self.action_size, activation="linear"))
         model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
         return model
@@ -172,7 +175,7 @@ class DDQNagent:
         for i in range(len(phi)):
             target_phi[i] = TAU * phi[i] + (1 - TAU) * target_phi[i]
         self.target_model.set_weights(target_phi)
-        # 이건 targetNetwork 존재의믜가 없는 코드. 손좀 봐줄 필요있다.
+        # 이건 targetNetwork 존재의미가 없는 코드. 손좀 봐줄 필요있다.
 
     def model_learn(self, states, actions, td_targets):
         with tf.GradientTape() as tape:
@@ -180,6 +183,11 @@ class DDQNagent:
             q = self.model(states, training=True)
             q_values = tf.reduce_sum(one_hot_actions * q, axis=1, keepdims=True)
             loss = tf.reduce_mean(tf.square(q_values - td_targets))
+
+        grads = tape.gradient(loss, self.doubledqn.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
+        
 
     # 미래 보상을 반영하기 위해서 쓰는 함수다..
     def td_target(self, rewards, target_qs, max_a, dones):
@@ -200,7 +208,7 @@ class DDQNagent:
         if np.random.random() <= self.epsilon:
             return env.action_space.sample()[0]
         else:
-            qs = self.model(tf.convert_to_tensor(state, dtype=tf.float32))
+            qs = self.model(tf.convert_to_tensor(state, dtype=tf.float64))
 
             return np.argmax(qs.numpy())
 
@@ -218,6 +226,7 @@ class Hypridagent:
         # Replay Buffer
         self.ddqnbuffer = ReplayBuffer(self.BUFFER_SIZE)
         self.ddpgbuffer = ReplayBuffer(self.BUFFER_SIZE)
+        self.replayfull = False
 
         self.save_epi_reward = []
         print("[Hybrid init]: Hybrid Init OK ")
@@ -227,6 +236,8 @@ class Hypridagent:
 
         self.DDQN.update_target_network(1.0)
         self.DDPG.update_target_network(1.0)
+
+        printweight = 0
 
         for ep in range(int(max_episode_num)):
 
@@ -243,8 +254,9 @@ class Hypridagent:
                 start = tt.time()
                 # state에 따른 행동 뽑아오기
                 ddqn_act = self.DDQN.act(state, self.env)
-                ddpg_act = self.DDPG.act(state, ddqn_act)
-                noise = ou_noise(pre_noise, dim=self.DDPG.action_dim)
+                ddpg_act = self.DDPG.act(state, ddqn_act, self.replayfull)
+                ddpg_act = np.clip(ddpg_act, self.DDPG.action_low, self.DDPG.action_high)
+                noise = ou_noise(pre_noise, dim=self.DDPG.action_dim, rho=0.1, sigma=(high_arr - low_arr) / 4)
                 ddpg_act = np.clip(ddpg_act + noise, self.DDPG.action_low, self.DDPG.action_high)
 
                 action = [ddqn_act, ddpg_act]
@@ -253,11 +265,12 @@ class Hypridagent:
                 next_state, reward, done, _ = self.env.step(action) # env의 action 입력값은 [] 리스트
 
                 # reward 손좀 보기
-                if reward == 0:
+                # 04.14 이게 문제같다. reward가 0일 때도 이점이 있다는 걸 알려줘야하는데..
+                if reward is None:
+                    print("reward is None")
                     continue
+
                 train_reward = reward
-                # 만약 reward가 0이면 버퍼에 넣으면 안된다!!!!!!!!!
-            
 
                 # 버퍼에 기록하기 - DDQN
                 self.ddqnbuffer.add_buffer(state, action[0], train_reward, next_state, done) # 여기서 next_state가 학습에 영향을 줄까??
@@ -273,7 +286,12 @@ class Hypridagent:
 
                 # print("\n\nacting time=", tt.time() - start)
 
-                if self.ddqnbuffer.buffer_count() > 100 and self.ddpgbuffer.buffer_count() > 100:
+                if self.ddqnbuffer.buffer_count() > 500 and self.ddpgbuffer.buffer_count() > 500:
+
+                    if self.replayfull == False:
+                        self.replayfull = True
+                        print("[Train]: Ready To Train!")
+                        tt.sleep(10)
 
                     start = tt.time()
 
@@ -335,6 +353,26 @@ class Hypridagent:
                 episode_reward += train_reward
                 time += 1
 
+                ## 04.20 디버깅
+
+                printweight += 1
+                if printweight % 100 == 0:
+                    print("---[Print Weights]---")
+                    for layer in self.DDPG.actor.model.layers:
+                        weights = layer.get_weights()
+
+                            
+                        if weights:  # 가중치 리스트가 비어 있지 않다면
+
+                            print("layer_weight =", weights)
+                            if any(np.isnan(weight).any() for weight in weights):
+                                print("Weight has nan!!")
+                                tt.sleep(100000)
+                        else:
+                            print(f"{layer.name} layer has no weights.")
+                        # print("Actor Weights:\n", weights)
+                        # print("Actor Biases:\n", biases)
+
             # display each episode
             print('Episode: ', ep+1, 'Time: ', time, 'Reward: ', episode_reward)
 
@@ -348,10 +386,12 @@ class Hypridagent:
             self.DDQN.model.save_weights("./save_weights/ddqn.weights.h5")
             print("[Save Weight]: ep",ep," save Completed")
 
+            with open('./save_weights/train_reward.txt', 'a') as f:
+                f.write(f"ep{ep} reward = {episode_reward}\n")
+
         # epi_reward 저장
         
         # 저장코드
-        np.savetxt('./save_weights/train_reward.txt', self.save_epi_reward)
 
     ## save them to file if done
     def plot_result(self):
@@ -360,7 +400,7 @@ class Hypridagent:
 
 def main():
 
-    max_episode_num = 20
+    max_episode_num = 200
     agent = Hypridagent()
 
     agent.train(max_episode_num)

@@ -43,16 +43,18 @@ kline_interval_mapping = {
     "5m": Client.KLINE_INTERVAL_5MINUTE,
     "1m": Client.KLINE_INTERVAL_1MINUTE,
 }
-ticker = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT", "ADAUSDT", "AVAXUSDT",
-           "SHIBUSDT","DOTUSDT", "LINKUSDT", "TRXUSDT", "MATICUSDT",
-           "BCHUSDT", "ICPUSDT", "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT"]
-tickers = ["APTUSDT"]
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+           "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
+            "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
+            "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
+            "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+ticker = ["APTUSDT"]
 
 # API 파일 경로
-api_key_file_path = "../api.txt"
+api_key_file_path = "api.txt"
 
 # 디렉토리 생성
-data_dir = 'candle_data'
+data_dir = 'candle_datas'
 
 # 클라이언트 변수
 _client = None
@@ -134,7 +136,7 @@ def get_klines_by_date(client, symbol, limit, interval, start_time, end_time):
                 'taker_buy_quote', 'ignored']
     return pd.DataFrame(candles, columns=col_name)
 
-def get_candle_data_to_csv(ticker, scale, start_time, end_time): # "1 Jan, 2021", "30 Jun, 2023"
+def get_candle_data_to_csv(ticker, scale, start_time, end_time): # "1 Jan, 2017", "30 DEC, 2023"
     # csv 파일 생성
     filename = f"{ticker}_{scale}.csv"
     filepath = os.path.join(data_dir, filename)
@@ -159,17 +161,16 @@ def get_candle_data_to_csv(ticker, scale, start_time, end_time): # "1 Jan, 2021"
 
     print("Data fetching and saving completed.")
 
-def get_candle_data_to_csv_1m(ticker, scale, start_time, end_time): #너무 커서 잘라서 쓰자
+def get_candle_data_to_csv_1m(ticker, scale): #너무 커서 잘라서 쓰자
     # csv 파일 생성
-    i=0
-    y=2021
-    st1 = "1 Jan"
-    st2 = "1 Jul"
-    en1 = "30 Jun"
-    en2 = "31 DEC"
 
-    for y in range (2021, 2024):
-        for i in range (0, 2):
+    st = ["1 Jan", "1 Apr", "1 Jul", "1 Oct"]
+    en = ["31 Mar", "30 Jun", "30 Sep", "31 Dec"]
+
+
+
+    for y in range (2017, 2024):
+        for i in range (2, 3):
             filename = f"{ticker}_{scale}_{y}_{i}.csv"
             print(filename)
             filepath = os.path.join(data_dir, filename)
@@ -179,11 +180,7 @@ def get_candle_data_to_csv_1m(ticker, scale, start_time, end_time): #너무 커�
 
                 print("Open Ok")
 
-                if i==0:
-                    klines = _client.get_historical_klines(ticker, kline_interval_mapping.get(scale),f"{st1}, {y}" , f"{en1}, {y}")
-                else:
-                    klines = _client.get_historical_klines(ticker, kline_interval_mapping.get(scale), f"{st2}, {y}",
-                                                           f"{en2}, {y}")
+                klines = _client.get_historical_klines(ticker, kline_interval_mapping.get(scale),f"{st[i]}, {y}" , f"{en[i]}, {y}")
 
                 print("Get Candles OK")
 
@@ -197,6 +194,36 @@ def get_candle_data_to_csv_1m(ticker, scale, start_time, end_time): #너무 커�
                     writer.writerow([timestamp, open_price, high_price, low_price, close_price, volume])
 
             print("Data fetching and saving completed.")
+
+def get_candle_data_to_csv_5m(ticker, scale): #너무 커서 잘라서 쓰자
+    # csv 파일 생성
+    i=0
+    y=2017
+
+    for y in range (y, 2024):
+        filename = f"{ticker}_{scale}_{y}.csv"
+        print(filename)
+        filepath = os.path.join(data_dir, filename)
+        with open(filepath, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['time', 'open', 'high', 'low', 'close', 'volume'])
+
+            print("Open Ok")
+
+            klines = _client.get_historical_klines(ticker, kline_interval_mapping.get(scale),f"1 Jan, {y}" , f"31 Dec, {y}")
+
+            print("Get Candles OK")
+
+            for k in klines:
+                timestamp = k[0]
+                open_price = k[1]
+                high_price = k[2]
+                low_price = k[3]
+                close_price = k[4]
+                volume = k[5]
+                writer.writerow([timestamp, open_price, high_price, low_price, close_price, volume])
+
+        print("Data fetching and saving completed.")
 
 def get_candle_datas_to_csv(ticker, start_time, end_time):
     for key in kline_interval_mapping.keys():
@@ -217,30 +244,50 @@ def get_candle_subdatas(candles):
     low = candles['low'].apply(pd.to_numeric).to_numpy()
     volume = candles['volume'].apply(pd.to_numeric).to_numpy()
 
+    front_close = candles['close'].shift(1)
+
+    highr = ( candles['high'] - front_close ) / front_close * 100
+    highr.name = 'highp'
+    lowr = ( candles['low'] - front_close ) / front_close * 100
+    lowr.name = 'lowp'
+    closer = ( candles['close'] - front_close ) / front_close * 100
+    closer.name = 'closep'
+    openr = ( candles['open'] - front_close ) / front_close * 100
+    openr.name = 'openp'
+
+
+
     # Numpy밖에 못 쓴다 -> .to_numpy()
-    sma7 = pd.Series(talib.SMA(close, timeperiod=7), name="sma7")
-    sma20 = pd.Series(talib.SMA(close, timeperiod=20), name="sma20")
-    sma60 = pd.Series(talib.SMA(close, timeperiod=60), name="sma60")
-    sma120 = pd.Series(talib.SMA(close, timeperiod=120), name="sma120")
+    sma7 = (pd.Series(talib.SMA(close, timeperiod=7), name="sma7") - candles['close']) / candles['close'] * 100
+    sma7.name = 'sma7p'
+    sma20 = (pd.Series(talib.SMA(close, timeperiod=20), name="sma20") - candles['close']) / candles['close'] * 100
+    sma20.name = 'sma20p'
+    sma60 = (pd.Series(talib.SMA(close, timeperiod=60), name="sma60") - candles['close']) / candles['close'] * 100
+    sma60.name = 'sma60p'
+    sma120 = (pd.Series(talib.SMA(close, timeperiod=120), name="sma120") - candles['close']) / candles['close'] * 100
+    sma120.name = 'sma120p'
 
     rsi = pd.Series(talib.RSI(close, timeperiod=14), name="rsi")
-    volume_sma = pd.Series(talib.SMA(volume, timeperiod=20), name="vol_sma")
+    volume_sma = pd.Series(talib.SMA(volume, timeperiod=20), name="vol_sma") / candles['volume']
+    volume_sma.name = "volp"
+
     ### 한국 시간으로 맞춰주기 + DateTime으로 변환
     # korea_tz = pytz.timezone('Asia/Seoul')
     # datetime = pd.to_datetime(candles['time'], unit='ms')
     # candles['time'] = datetime.dt.tz_localize(pytz.utc).dt.tz_convert(korea_tz)
     # 볼린저 밴드
     upperband, middleband, lowerband = talib.BBANDS(candles['close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-    upperband.name = "upperband"
-    lowerband.name = "lowerband"
-
+    upperband = ( upperband - candles['close'] ) / candles['close'] * 100
+    upperband.name = "upperbandp"
+    lowerband = ( lowerband - candles['close'] ) / candles['close'] * 100
+    lowerband.name = "lowerbandp"
     # atr
     atr = pd.Series(talib.ATR(high, low, close, timeperiod=14), name="atr")
     # macd
-    macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-    macd = pd.Series(macd, name="macd")
-    macdsignal = pd.Series(macdsignal, name="macdsignal")
-    macdhist = pd.Series(macdhist, name="macdhist")
+    # macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+    # macd = pd.Series(macd, name="macd")
+    # macdsignal = pd.Series(macdsignal, name="macdsignal")
+    # macdhist = pd.Series(macdhist, name="macdhist")
     # cci
     real = pd.Series(talib.CCI(high, low, close, timeperiod=14), name="cci")
     # adx
@@ -248,10 +295,10 @@ def get_candle_subdatas(candles):
     # 트렌드
     # inclination = calculate_trends(candles, 0)
     # 연결
-    data = pd.concat([candles, sma7, sma20, sma60, sma120, rsi, volume_sma, upperband, lowerband, atr, macd, macdsignal, macdhist, real, adx],
+    data = pd.concat([candles, openr, highr, lowr, closer, sma7, sma20, sma60, sma120, rsi, volume_sma, upperband, lowerband, atr, real, adx],
                      axis=1)
 
-    data.fillna(-1, inplace=True)
+    data.fillna(0, inplace=True)
     return data
 
 def get_subdatas():
@@ -259,29 +306,58 @@ def get_subdatas():
     for ticker in tickers:
         for key in kline_interval_mapping.keys():
             if key == '1m':
-                for y in range (2021, 2024):
-                    for i in range(0, 2):
+                for y in range (2017, 2024):
+                    for i in range(2, 3):
                         print(f"making {ticker}_{key}_{y}_{i}..")
-                        df = pd.read_csv(f"candle_data/{ticker}_{key}_{y}_{i}.csv")
+                        df = pd.read_csv(f"candle_datas/{ticker}_{key}_{y}_{i}.csv")
+                        if df.empty:
+                            continue
                         df_sub = get_candle_subdatas(df)
                         if df_sub is not None :
-                            df_sub.to_csv(f"candle_data/{ticker}_{key}_{y}_{i}_sub.csv")
+                            df_sub.to_csv(f"candle_datas/{ticker}_{key}_{y}_{i}_sub.csv")
+            elif key == '5m':
+                continue
+                for y in range (2017, 2024):
+                    print(f"making {ticker}_{key}_{y}..")
+                    df = pd.read_csv(f"candle_datas/{ticker}_{key}_{y}.csv")
+                    if df.empty:
+                        continue
+                    df_sub = get_candle_subdatas(df)
+                    if df_sub is not None :
+                        df_sub.to_csv(f"candle_datas/{ticker}_{key}_{y}_sub.csv")
             else:
+                continue
                 print(f"making {ticker}_{key}..")
-                df = pd.read_csv(f"candle_data/{ticker}_{key}.csv")
+                df = pd.read_csv(f"candle_datas/{ticker}_{key}.csv")
+                if df.empty:
+                    continue
                 df_sub = get_candle_subdatas(df)
                 if df_sub is not None:
-                    df_sub.to_csv(f"candle_data/{ticker}_{key}_sub.csv")
+                    df_sub.to_csv(f"candle_datas/{ticker}_{key}_sub.csv")
 
     return
 
+def get_subdata_one():
+    
+    df = pd.read_csv("candle_datas/BTCUSDT_1w.csv")
+    df_sub = get_candle_subdatas(df)
+    if df_sub is not None :
+        df_sub.to_csv(f"candle_datas/BTCUSDT_1w_sub.csv")
+    
 
 if __name__ == '__main__':
     create_client()
     get_usdt_balance(_client, True)
 
-    # get_candle_data_to_csv("BTCUSDT", "5m", "1 Jan, 2021", "30 Jun, 2023")
+    for ticker in tickers:
+    #     get_candle_datas_to_csv(ticker, "1 Jan, 2017", "31 DEC, 2023")
+    #     get_candle_data_to_csv_5m(ticker, "5m")
+        get_candle_data_to_csv_1m(ticker, "1m")
+
     get_subdatas()
+
+    
+    
 
 
 

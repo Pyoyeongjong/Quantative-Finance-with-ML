@@ -1,0 +1,43 @@
+low_arr = np.asarray([0.0005, 0.0005, 0.25])
+high_arr = np.asarray([0.9, 1, 0.75])
+
+Data
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT", "SOLUSDT","XRPUSDT","DOGEUSDT", "ADAUSDT", "AVAXUSDT",
+           "DOTUSDT", "LINKUSDT", "TRXUSDT", "MATICUSDT", "BCHUSDT", "NEARUSDT", "UNIUSDT"]
+기간 : 2021.01.01~2023.06.31
+정규화 : 전부 min_max
+
+MAX_POS_HOLD_TIME= 31536000
+BALANCE = 10000
+TRANS_FEE = 0.04 * 0.01
+
+Actor, critic
+        out = layers.Dense(256, activation="relu")(out)
+        out = layers.Dense(128, activation="relu")(out)
+
+DDPGAgent
+        self.GAMMA = 0.95
+        self.BATCH_SIZE = 32
+        self.BUFFER_SIZE = 20000
+        self.ACTOR_LEARNING_RATE = 0.001
+        self.CRITIC_LEARNING_RATE = 0.001
+        self.TAU = 0.001
+DDQNAgent
+        self.gamma = 0.95
+        self.epsilon = 1.0
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.learning_rate = 0.001
+        self.TAU = 0.01
+HybridAgent
+        self.BATCH_SIZE = 32
+
+    def cal_reward(self, percent):
+        if percent >= 0:
+            # return percent
+            return percent * self.budget
+        else:
+            return percent * self.budget
+            #return - ((1 + abs(percent)) ** 1.1 - 1) * 100
+
+
