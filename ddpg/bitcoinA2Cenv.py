@@ -60,104 +60,138 @@ class BitcoinTradingEnv(gym.Env):
         else:
             return False
         
+    # curr의 다음 행을 가져오는 함수.
     def get_next_row_obs(self):
 
         # 만약 마지막이라면?
         if self.ticker_is_done():
+            self.done = True
             return None
         
-        # curr의 다음 행을 가져오는 함수.
+        return ohlcv, obs
+        
+    def cal_percent(after, before):
+        return (after - before) / before * 100
+        
+        
 
         
         
-    def long_step(self, action):
+    def long_step(self, action, position):
 
-        # action이 홀딩(0) 이면
-        # obs = 다음 행 reward = 0, done = False, info = 대충 없음.
+        ohlcv, obs = self.get_next_row_obs()
 
-        obs = self.get_next_row_obs()
         if obs is None: # 판단할 수 없음.
             reward = None
             done = True
         
+        # action이 홀딩(0) 이면
+        # obs = 다음 행 reward = 0, done = False, info = 대충 없음.
         if action == 0:
             done = False
+            reward = 0
 
         # action이 정리(1) 이면
         # obs = 다음 행, reward = 이득, done = True, info = 대충 없음.
         if action == 1:
             done = True
-
-
-        def cal_long_reward(action):
-            if action == 0:
-                return 0
-            else:
-                
-                return self.cal_reward(percent)
+            percent = self.cal_percent(position, ohlcv['open'])
+            reward = self.cal_reward(percent)
         
         info = "Long"
-
-        if reward is not None:
-            reward = cal_long_reward()
 
         return obs, reward, done, info
 
-    def short_step(self, action):
+    def short_step(self, action,position):
 
+        ohlcv, obs = self.get_next_row_obs()
+
+        if obs is None: # 판단할 수 없음.
+            reward = None
+            done = True
+        
         # action이 홀딩(0) 이면
-        # obs = 다음 행 reward = 0, done = done, info = 대충 없음.
-
+        # obs = 다음 행 reward = 0, done = False, info = 대충 없음.
+        if action == 0:
+            done = False
+            reward = 0
 
         # action이 정리(1) 이면
-        # obs = 다음 행, reward = 결과, done = done, info = 대충 없음.
+        # obs = 다음 행, reward = 이득, done = True, info = 대충 없음.
+        if action == 1:
+            done = True
+            percent = - self.cal_percent(position, ohlcv['open'])
+            reward = self.cal_reward(percent)
         
+        info = "Short"
 
-        def cal_short_reward():
-            return 0
-        
-        reward = cal_short_reward()
-        info = "Long"
-
-        return obs, reward, self.done, info
+        return obs, reward, done, info
 
 
     # 이건 env 가 아닌 agent 에 있어야 할 함수! 편의상 여기서 먼저 만듬.
     def action_step(self, action):
 
+        info = "action_step"
+
         # action 이 매수(0)이면
         # long_step을 통해 진행
         if action == 0:
-            state = self.get_next_row_obs()
+            ohlcv, state = self.get_next_row_obs()
+            reward = 0
+            position = curr_row['close'] # 임시
 
             while(1): # long action이 종료될 때 까지
-                long_act = self.DDQN.act(state, self.long_action_space.shape[0])
-                l_next_state, l_reward, l_done, _ = self.long_step(long_act)
+                long_act = self.LongAgent.act(state, self.long_action_space.shape[0])
+                l_next_state, l_reward, l_done, _ = self.long_step(long_act, position)
 
+                # replaybuffer에 넣고
+
+                # replaybuffer에서 sample_batch 추출
+
+                # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
+
+                reward += l_reward
+                state = l_next_state
                 if l_done:
                     break # long 거래가 끝났으므로 빠져나간다.
 
-            return obs, reward, done, info
+            obs = state
 
-
-
-
+            return obs, reward, self.done, info
 
         # action 이 매도(1)이면
         # short_step을 통해 진행
-        if action == 1:
+        elif action == 1:
             state = self.get_next_row_obs()
+            reward = 0
             while(1): # long action이 종료될 때 까지
-                short_act = self.DDQN.act(state, self.short_action_space.shape[0])
-                s_next_state, s_reward, s_done, _ = self.long_step(long_act)
+                short_act = self.ShortAgent.act(state, self.short_action_space.shape[0])
+                s_next_state, s_reward, s_done, _ = self.short_step(short_act)
 
-                if l_done:
+                reward += s_reward
+
+                # replaybuffer에 넣고
+
+                # replaybuffer에서 sample_batch 추출
+
+                # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
+
+                state = s_next_state
+                if s_done:
                     break # long 거래가 끝났으므로 빠져나간다.
+                
+            obs = state
 
-            reward = s_reward
-            done = self.done
+            return obs, reward, self.done, info
+        
+        else:
+            _, obs = self.get_next_row_obs()
+            if obs is None: # 판단할 수 없음.
+                reward = None
+                self.done = True
 
-            return obs, reward, done, info
+
+        return obs, reward, self.done, info
 
         # 관망(2)이면
         # next_obs 그냥 다음 행 주기.
