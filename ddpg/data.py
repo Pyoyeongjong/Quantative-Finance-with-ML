@@ -95,13 +95,13 @@ class Data:
         # print(self.data_1w, self.data_1d, self.data_4h, self.data_1h,self.data_15m, self.data_5m, self.data_1m)
     
     def load_data_initial(self,ticker):
-        self.data_1w = pd.read_csv(f"candle_datas/{ticker}_1w_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_1d = pd.read_csv(f"candle_datas/{ticker}_1d_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_4h = pd.read_csv(f"candle_datas/{ticker}_4h_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_1h = pd.read_csv(f"candle_datas/{ticker}_1h_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_5m = pd.read_csv(f"candle_datas/{ticker}_5m_2023_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
-        self.data_1m = pd.read_csv(f"candle_datas/{ticker}_1m_2023_3_sub.csv", nrows=1).drop(columns='Unnamed: 0').dropna()
+        self.data_1w = pd.read_csv(f"candle_datas/{ticker}_1w_sub.csv", nrows=5).drop(columns='Unnamed: 0').dropna()
+        self.data_1d = pd.read_csv(f"candle_datas/{ticker}_1d_sub.csv", nrows=35).drop(columns='Unnamed: 0').dropna()
+        self.data_4h = pd.read_csv(f"candle_datas/{ticker}_4h_sub.csv", nrows=200).drop(columns='Unnamed: 0').dropna()
+        self.data_1h = pd.read_csv(f"candle_datas/{ticker}_1h_sub.csv", nrows=800).drop(columns='Unnamed: 0').dropna()
+        self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
+        self.data_5m = pd.read_csv(f"candle_datas/{ticker}_5m_2023_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
+        self.data_1m = pd.read_csv(f"candle_datas/{ticker}_1m_2023_3_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
         self.load_obs_data()
 
 

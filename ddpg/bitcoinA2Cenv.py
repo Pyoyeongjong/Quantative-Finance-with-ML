@@ -25,13 +25,19 @@ from gym.envs.registration import register
 BALANCE = 10000
 TRANS_FEE = 0.04 * 0.01
 
+lri = [-1, -1, -1, -1, -1, -1, -1] # last row index
+
+def init_lri():
+    for i in range(len(lri)):
+        lri[i] = -1 # -1이 초기값
+
 class BitcoinTradingEnv(gym.Env):
 
     metadata = {'render.modes': ['console']}
 
-    def __init__(self, low_arr, high_arr):
+    def __init__(self):
         self.curr = 0 # 1분봉 기준 현재 행의 위치
-        self.curr_ticker = 0 # tickers 리스트에서 현재 사용 중인 index 
+        self.curr_ticker = 24 # tickers 리스트에서 현재 사용 중인 index 
         self.done = False
         self.balance = BALANCE
         self.datas = Data()
@@ -43,15 +49,15 @@ class BitcoinTradingEnv(gym.Env):
         self.long_action_space = spaces.Discrete(2) # 홀딩, 정리
         self.short_action_space = spaces.Discrete(2) # 홀딩, 정리
         print(self.datas.get_datas_len())
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.datas.get_datas_len(), ), dtype=np.float64) # (data.shape[1], ) = (열, 1)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.datas.get_datas_len()-7, ), dtype=np.float64) # (data.shape[1], ) = (열, 1)
 
         print("[BitcoinTradingEnv]: Env init OK")
 
     def cal_reward(self, percent):
         if percent >= 0:
-            return percent
+            return percent * 100
         else:
-            return - (1 / (1 + percent) - 1)
+            return - (1 / (1 + percent) - 1) * 100
 
     
     def ticker_is_done(self):
@@ -60,28 +66,69 @@ class BitcoinTradingEnv(gym.Env):
         else:
             return False
         
+    def get_curr_ohlcv(self, ohlcv):
+        return self.datas.data_1m.loc[self.curr, ohlcv]
+        
     # curr의 다음 행을 가져오는 함수.
     def get_next_row_obs(self):
+
+        start = time.time()
+        timestamp = [604800, 86400, 14400, 3600, 900, 300, 60] * 1000
+
+        ohlcv_list = ['open', 'high', 'low', 'close', 'volume'] # OHLCV
+        self.curr += 1
+
+        datas = self.datas.get_obs_datas()
+        curr_time = self.datas.data_1m.loc[self.curr, 'time']
+        rows_list = []
+        data_loc = 0
+
+        for data in datas:
+
+            # 1m 에 대해선 안해도 됨.
+            if data_loc >= 6:
+                lri[data_loc] = self.curr
+            else:
+                # 만약 초기값 상태라면, 1m time보다 작은 가장 큰 행 위치를 lri에 기록
+                if int(lri[data_loc]) < 0:
+                    filtered_data = data.loc[data['time'] <= curr_time]
+                    if not filtered_data.empty:
+                        lri[data_loc] = filtered_data.index[-1]
+
+                # row보다 1m time + 시간프레임이 크다면 index += 1
+                if lri[data_loc] < len(data) - 1:
+                    compare_row = data.loc[lri[data_loc]]
+                    if compare_row['time'] <= curr_time + timestamp[data_loc]:
+                        lri[data_loc] += 1
+
+            row = data.loc[lri[data_loc]]
+            row = row.drop("time")
+            rows_list.append(row)
+            data_loc += 1
+
+        rows = np.concatenate(rows_list)
+        
+        if np.isnan(rows).any():
+            print("There is nan data.")
+            time.sleep(10)
+            self.get_next_row_obs()
 
         # 만약 마지막이라면?
         if self.ticker_is_done():
             self.done = True
             return None
         
-        return ohlcv, obs
+        return self.get_curr_ohlcv(ohlcv_list), rows
         
-    def cal_percent(after, before):
-        return (after - before) / before * 100
-        
-        
-
+    def cal_percent(self, before, after):
+        return ((after - before) / before - TRANS_FEE)
         
         
     def long_step(self, action, position):
 
         ohlcv, obs = self.get_next_row_obs()
 
-        if obs is None: # 판단할 수 없음.
+        if obs.any() is None: # 판단할 수 없음.
             reward = None
             done = True
         
@@ -95,20 +142,21 @@ class BitcoinTradingEnv(gym.Env):
         # obs = 다음 행, reward = 이득, done = True, info = 대충 없음.
         if action == 1:
             done = True
-            percent = self.cal_percent(position, ohlcv['open'])
+            percent = self.cal_percent(position, ohlcv['close'])
             reward = self.cal_reward(percent)
         
-        info = "Long"
+        info = [ohlcv['close']]
 
         return obs, reward, done, info
 
-    def short_step(self, action,position):
+    def short_step(self, action, position):
 
         ohlcv, obs = self.get_next_row_obs()
 
         if obs is None: # 판단할 수 없음.
             reward = None
             done = True
+            info = ['sorry']
         
         # action이 홀딩(0) 이면
         # obs = 다음 행 reward = 0, done = False, info = 대충 없음.
@@ -120,133 +168,40 @@ class BitcoinTradingEnv(gym.Env):
         # obs = 다음 행, reward = 이득, done = True, info = 대충 없음.
         if action == 1:
             done = True
-            percent = - self.cal_percent(position, ohlcv['open'])
+            percent = -self.cal_percent(position, ohlcv['close'])
             reward = self.cal_reward(percent)
         
-        info = "Short"
+        info = [ohlcv['close']]
 
-        return obs, reward, done, info
-
-
-    # 이건 env 가 아닌 agent 에 있어야 할 함수! 편의상 여기서 먼저 만듬.
-    def action_step(self, action):
-
-        info = "action_step"
-
-        # action 이 매수(0)이면
-        # long_step을 통해 진행
-        if action == 0:
-            ohlcv, state = self.get_next_row_obs()
-            reward = 0
-            position = curr_row['close'] # 임시
-
-            while(1): # long action이 종료될 때 까지
-                long_act = self.LongAgent.act(state, self.long_action_space.shape[0])
-                l_next_state, l_reward, l_done, _ = self.long_step(long_act, position)
-
-                # replaybuffer에 넣고
-
-                # replaybuffer에서 sample_batch 추출
-
-                # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
-
-                reward += l_reward
-                state = l_next_state
-                if l_done:
-                    break # long 거래가 끝났으므로 빠져나간다.
-
-            obs = state
-
-            return obs, reward, self.done, info
-
-        # action 이 매도(1)이면
-        # short_step을 통해 진행
-        elif action == 1:
-            state = self.get_next_row_obs()
-            reward = 0
-            while(1): # long action이 종료될 때 까지
-                short_act = self.ShortAgent.act(state, self.short_action_space.shape[0])
-                s_next_state, s_reward, s_done, _ = self.short_step(short_act)
-
-                reward += s_reward
-
-                # replaybuffer에 넣고
-
-                # replaybuffer에서 sample_batch 추출
-
-                # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
-
-                state = s_next_state
-                if s_done:
-                    break # long 거래가 끝났으므로 빠져나간다.
-                
-            obs = state
-
-            return obs, reward, self.done, info
-        
-        else:
-            _, obs = self.get_next_row_obs()
-            if obs is None: # 판단할 수 없음.
-                reward = None
-                self.done = True
-
-
-        return obs, reward, self.done, info
-
-        # 관망(2)이면
-        # next_obs 그냥 다음 행 주기.
-
-        if self.soft_done():
-            self.soft_reset()
-
-        obs = self.next_observation()
-        if obs is None:
-            self.soft_reset()
-            obs = self.next_observation()
-
-        done = self.done
-        info = {"reward": reward} # for debug
-        # print("[STEP]: step done, final_reward=", reward)
-        # print("step time=",time.time() - start)
         return obs, reward, done, info
 
     def reset(self):
 
-        print("[Env]: hard reset. first ticker = ",tickers[0])
-        # Implement reset here
         self.curr = 0
-        self.curr_ticker = 0
+        if self.curr_ticker >= len(tickers) - 1:
+            self.curr_ticker = 0
+        else:
+            self.curr_ticker += 1
+
+        print("[Env]: Reset. ticker = ",tickers[self.curr_ticker])
+        # Implement reset here
+
         self.budget = 10000
         self.done = False
+        init_lri()
 
-        # self.datas.load_data_with_normalization(tickers[self.curr_ticker])
+        # self.datas.load_data_initial(tickers[self.curr_ticker])
         self.datas.load_data_with_normalization(tickers[self.curr_ticker])
-        return self.next_observation()
-
-    def soft_reset(self):
-        
-        print("curr_ticker=",self.curr_ticker)
-        print(len(tickers))
-
-        with open('./save_weights/train_budget.txt', 'a') as f:
-            f.write(f"{tickers[self.curr_ticker]} : {self.budget}\n")
-
-        self.budget = 10000
-        self.curr = 0
-        self.curr_ticker += 1
-        if self.curr_ticker >= len(tickers):
-            self.done = True
-            return
-        
-        else:
-            print("[Env]: soft reset to ", tickers[self.curr_ticker])
-            # self.datas.load_data_with_normalization(tickers[self.curr_ticker])
-            self.datas.load_data_with_normalization(tickers[self.curr_ticker])
+        return self.get_next_row_obs()
 
 
 
-if __name__ == '__main__':
-    data = Data()
-    for ticker in tickers:
-        print(f"\n\n{ticker}")
-        data.load_data_with_normalization(ticker)
+def main():
+
+    max_episode_num = 200
+    agent = Train()
+
+    agent.train(max_episode_num)
+
+if __name__=='__main__':
+    main()
