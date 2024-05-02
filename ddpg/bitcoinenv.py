@@ -5,12 +5,6 @@ import pandas as pd
 from data import Data
 import time
 
-
-## Data Preparation
-
-# scaler = MinMaxScaler()
-# scaled_data = scaler.fit_transform(df)
-
 tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
@@ -19,8 +13,6 @@ tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
 ticker = ["BTCUSDT"] # for test
 
 timezone = ["1w", "1d", "4h", "1h", "15m", "5m", "1m"]
-
-from gym.envs.registration import register
 
 # low_arr = np.array([0, 0.08 * 0.01, 0])
 # high_arr = np.array([0.9, 1000, 1])

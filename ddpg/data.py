@@ -132,33 +132,6 @@ class Data:
         # self.min_max()
         self.z_norm()
         self.mm_norm()
-    
-    def min_max(self):
-        pass
-        # for col in scale_cols:
-        #     self.data_1w[col] = min_max_normalize(self.data_1w[col])
-        #     self.data_1d[col] = min_max_normalize(self.data_1d[col])
-        #     self.data_4h[col] = min_max_normalize(self.data_4h[col])
-        #     self.data_1h[col] = min_max_normalize(self.data_1h[col])
-        #     self.data_15m[col] = min_max_normalize(self.data_15m[col])
-        #     self.data_5m[col] = min_max_normalize(self.data_5m[col])
-        #     self.data_1m[col] = min_max_normalize(self.data_1m[col])
-
-        # self.data_1w[cost_cols] = scaler.fit_transform(self.data_1w[cost_cols])
-        # self.data_1d[cost_cols] = scaler.fit_transform(self.data_1d[cost_cols])
-        # self.data_4h[cost_cols] = scaler.fit_transform(self.data_4h[cost_cols])
-        # self.data_1h[cost_cols] = scaler.fit_transform(self.data_1h[cost_cols])
-        # self.data_15m[cost_cols] = scaler.fit_transform(self.data_15m[cost_cols])
-        # self.data_5m[cost_cols] = scaler.fit_transform(self.data_5m[cost_cols])
-        # self.data_1m[cost_cols] = scaler.fit_transform(self.data_1m[cost_cols])
-
-        # self.data_1w[volume_cols] = scaler.fit_transform(self.data_1w[volume_cols])
-        # self.data_1d[volume_cols] = scaler.fit_transform(self.data_1d[volume_cols])
-        # self.data_4h[volume_cols] = scaler.fit_transform(self.data_4h[volume_cols])
-        # self.data_1h[volume_cols] = scaler.fit_transform(self.data_1h[volume_cols])
-        # self.data_15m[volume_cols] = scaler.fit_transform(self.data_15m[volume_cols])
-        # self.data_5m[volume_cols] = scaler.fit_transform(self.data_5m[volume_cols])
-        # self.data_1m[volume_cols] = scaler.fit_transform(self.data_1m[volume_cols])
 
     def load_obs_data(self):
         self.data_1w_obs = self.data_1w.drop(columns=drop_list)
