@@ -10,6 +10,13 @@ from gym.spaces import Discrete, Space
 import matplotlib.pyplot as plt
 import time as TIME
 
+# Ticker
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+           "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
+            "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
+            "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
+            "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+
 class Actor:
     def __init__(self, state_size, action_dim):
         self.state_size = state_size # observation size
@@ -42,7 +49,7 @@ class A2Cagent:
 
     def __init__(self, state_dim, action_dim):
         # hyperparameters
-        self.GAMMA = 0.95
+        self.GAMMA = 0.99999
         self.BATCH_SIZE = 32
         self.ACTOR_LEARNING_RATE = 0.0001
         self.CRITIC_LEARNING_RATE = 0.001
@@ -111,11 +118,15 @@ class Train:
         self.LongAgent = A2Cagent(self.env.observation_space.shape[0], 2)
         self.ShortAgent = A2Cagent(self.env.observation_space.shape[0], 2)
         self.BATCH_SIZE = 32
+        self.BATCH_SIZE_LS = 128
         # long ,short agent 용 batch들
         self.lstates, self.lactions, self.ltd_targets, self.ladvantages = [], [], [], []
         self.sstates, self.sactions, self.std_targets, self.sadvantages = [], [], [], []
         self.save_epi_reward = []
         print("Trainer OK")
+        self.tradetrain = 0
+        self.longtrain = 0
+        self.shorttrain = 0
 
     def train(self, max_episode_num):
 
@@ -145,19 +156,15 @@ class Train:
                     _, state = self.env.get_next_row_obs()
                     continue
 
-                # budget 계산을 여기서 하자
-                if reward >= 0:
-                    self.env.budget = self.env.budget*(1+reward/100)
-                else:
-                    self.env.budget = self.env.budget*(1+reward/100)
                 # 여기서 done은 obs가 None일 떄(마지막일 떄) 만 True이다.
                 # debug용
-                print("time=",time," act=",act," reward=",reward," open=",info[0]," close=",info[1], " curr=",info[2]," budget=",self.env.budget)
+                if act < 2:
+                    print("time=",time," act=",act," reward=",reward*100," open=",info[0]," close=",info[1], " curr=",info[2]," budget=",self.env.budget)
 
                 # TradeAgent학습
                 v_value = self.TradeAgent.critic.model(tf.convert_to_tensor(np.array([state]), dtype=tf.float32))
                 next_v_value = self.TradeAgent.critic.model(tf.convert_to_tensor(np.array([next_state]), dtype=tf.float32))
-                train_reward = (reward+8)/8
+                train_reward = reward
                 # 사실 done이 True면 차트 특성상 가치평가를 할 수가 없긴 함
                 advantage, y_i = self.TradeAgent.td_target(train_reward, v_value, next_v_value, done)
                 # batch에 쌓기
@@ -175,10 +182,11 @@ class Train:
                     # actor 학습
                     self.TradeAgent.actor_learn(tf.convert_to_tensor(states, dtype=tf.float32),
                                                tf.convert_to_tensor(actions, dtype=tf.float32),
-                                           tf.convert_to_tensor(td_targets,dtype=tf.float32))
+                                           tf.convert_to_tensor(advantages,dtype=tf.float32))
+                    self.tradetrain += 1
                     # batch 지우기
                     states, actions, td_targets, advantages = [], [], [], []
-                    print("TradeAgent_learn exec time=",TIME.time() - start)
+                    print("\nTradeAgent_learn exec time=",TIME.time() - start)
 
                 episode_reward += reward
                 state = next_state
@@ -202,7 +210,7 @@ class Train:
             print("[Save Weight]: ep",ep," save Completed")
 
             with open('./save_weights/train_reward.txt', 'a') as f:
-                f.write(f"ep{ep} reward = {episode_reward}\n")
+                f.write(f"ep{ep} ticker = {tickers[self.env.curr_ticker]} reward = {episode_reward} budget = {self.env.budget}\n")
         
         # for 밖
         print("Train Finished")
@@ -216,9 +224,20 @@ class Train:
         # action 이 매수(0)이면
         # long_step을 통해 진행
         if action == 0:
+            # self.env.curr -= 1 
             ohlcv, state = self.env.get_next_row_obs()
+            if state is None:
+                reward = None
+                # ticker가 끝났는가?
+                if self.env.ticker_is_done():
+                    done = True # ticker끝
+                else:
+                    done = False
+                info = ["obs is none"]
+                return None, None, done, info # None, None, True, _
+            
             reward = 0
-            position = ohlcv['close'] # 임시
+            position = ohlcv['open'] # 임시
             close_position = None
 
             while(1): # long action이 종료될 때 까지
@@ -228,7 +247,7 @@ class Train:
                 l_next_state, l_reward, l_done, finish_info = self.env.long_or_short_step(act, position, False)
 
                 # obs None 판단불가능 (ticker가 끝났을 때 밖에 없을 거 같은데...)
-                if l_next_state.any() == None:
+                if l_next_state is None:
                     reward = None
                     # ticker가 끝났는가?
                     if self.env.ticker_is_done():
@@ -237,10 +256,14 @@ class Train:
                         done = False
                     info = ["obs is none"]
                     return None, None, done, info # None, None, True, _
+                
+                # l_reward(percent) -> reward로 바꿔주기
+                l_reward = self.env.cal_reward(l_reward)
+
                 # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
                 v_value = self.LongAgent.critic.model(tf.convert_to_tensor(np.array([state]), dtype=tf.float32))
                 next_v_value = self.LongAgent.critic.model(tf.convert_to_tensor(np.array([l_next_state]), dtype=tf.float32))
-                train_reward = (l_reward + 8)/8
+                train_reward = l_reward
                 advantage, y_i = self.LongAgent.td_target(train_reward, v_value, next_v_value, l_done)
                 # batch에 쌓기
                 self.lstates.append(state)
@@ -248,24 +271,32 @@ class Train:
                 self.ltd_targets.append(y_i)
                 self.ladvantages.append(advantage)
                 # 학습하기
-                if len(self.lstates) == self.BATCH_SIZE:
-                    start = TIME.time()
-                    # print("*****************************HI Long_learn********************************")
-                    # critic 학습
-                    self.LongAgent.critic_learn(tf.convert_to_tensor(self.lstates, dtype=tf.float32),
-                                           tf.convert_to_tensor(self.ltd_targets, dtype=tf.float32))
-                    # actor 학습
-                    self.LongAgent.actor_learn(tf.convert_to_tensor(self.lstates, dtype=tf.float32),
-                                               tf.convert_to_tensor(self.lactions, dtype=tf.float32),
-                                           tf.convert_to_tensor(self.ltd_targets,dtype=tf.float32))
+                if len(self.lstates) == self.BATCH_SIZE_LS:
+                    if True: # 배우는 비율 맞추기 self.tradetrain * 10 > self.longtrain
+                        start = TIME.time()
+                        # print("*****************************HI Long_learn********************************")
+                        # critic 학습
+                        self.LongAgent.critic_learn(tf.convert_to_tensor(self.lstates, dtype=tf.float32),
+                                            tf.convert_to_tensor(self.ltd_targets, dtype=tf.float32))
+                        # actor 학습
+                        self.LongAgent.actor_learn(tf.convert_to_tensor(self.lstates, dtype=tf.float32),
+                                                tf.convert_to_tensor(self.lactions, dtype=tf.float32),
+                                            tf.convert_to_tensor(self.ladvantages,dtype=tf.float32))
+                        print("\nLongAgent_learn exec time=",TIME.time() - start)
+                        self.longtrain += 1
                     # batch 지우기
                     self.lstates, self.lactions, self.ltd_targets, self.ladvantages = [], [], [], []
-                    print("LongAgent_learn exec time=",TIME.time() - start)
-                reward += l_reward
+                # reward += l_reward
                 state = l_next_state
                 if l_done:
                     close_position = finish_info[0]
+                    # 따로 reward를 계산해줘야 한다.
+                    percent = self.env.cal_percent(position, close_position) - self.env.TRANS_FEE * 2
+                    self.env.budget *= (1+percent)
+                    reward = self.env.cal_reward(percent)
                     break # long 거래가 끝났으므로 빠져나간다.
+
+            # budget에 넣기
 
             obs = state
             info = [position, close_position, self.env.curr]
@@ -275,8 +306,17 @@ class Train:
         # short_step을 통해 진행
         elif action == 1:
             ohlcv, state = self.env.get_next_row_obs()
+            if state is None:
+                reward = None
+                # ticker가 끝났는가?
+                if self.env.ticker_is_done():
+                    done = True # ticker끝
+                else:
+                    done = False
+                info = ["obs is none"]
+                return None, None, done, info # None, None, True, _
             reward = 0
-            position = ohlcv['close'] # 임시
+            position = ohlcv['open'] # 임시
             close_position = None
 
             while(1): # shont action이 종료될 때 까지
@@ -286,7 +326,7 @@ class Train:
                 s_next_state, s_reward, s_done, finish_info = self.env.long_or_short_step(act, position, True)
                 
                 # obs None (ticker가 끝났을 때 밖에 없을 거 같은데...)
-                if s_next_state.any() == None:
+                if s_next_state is None:
                     reward = None
                     # ticker가 끝났는가?
                     if self.env.ticker_is_done():
@@ -295,11 +335,14 @@ class Train:
                         done = False
                     info = ["obs is none"]
                     return None, None, done, info # None, None, True, _
+                
+                # l_reward(percent) -> reward로 바꿔주기
+                s_reward = self.env.cal_reward(s_reward)
 
-                # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
+                # ShortAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
                 v_value = self.ShortAgent.critic.model(tf.convert_to_tensor(np.array([state]), dtype=tf.float32))
                 next_v_value = self.ShortAgent.critic.model(tf.convert_to_tensor(np.array([s_next_state]), dtype=tf.float32))
-                train_reward = (s_reward+8)/8
+                train_reward = s_reward
                 advantage, y_i = self.ShortAgent.td_target(train_reward, v_value, next_v_value, s_done)
 
                 # batch에 쌓기
@@ -308,26 +351,32 @@ class Train:
                 self.std_targets.append(y_i)
                 self.sadvantages.append(advantage)
 
-                if len(self.sstates) == self.BATCH_SIZE:
+                if len(self.sstates) == self.BATCH_SIZE_LS:
                     # print("*****************************HI Short_learn********************************")
-                    start = TIME.time()
-                    # critic 학습
-                    self.ShortAgent.critic_learn(tf.convert_to_tensor(self.sstates, dtype=tf.float32),
-                                           tf.convert_to_tensor(self.std_targets,dtype=tf.float32))
+                    if True: # 배우는 비율 맞추기 self.tradetrain * 10 > self.shorttrain
+                        start = TIME.time()
+                        # critic 학습
+                        self.ShortAgent.critic_learn(tf.convert_to_tensor(self.sstates, dtype=tf.float32),
+                                            tf.convert_to_tensor(self.std_targets,dtype=tf.float32))
 
-                    # actor 학습
-                    self.ShortAgent.actor_learn(tf.convert_to_tensor(self.sstates, dtype=tf.float32),
-                                               tf.convert_to_tensor(self.sactions, dtype=tf.float32),
-                                           tf.convert_to_tensor(self.std_targets,dtype=tf.float32))
-
+                        # actor 학습
+                        self.ShortAgent.actor_learn(tf.convert_to_tensor(self.sstates, dtype=tf.float32),
+                                                tf.convert_to_tensor(self.sactions, dtype=tf.float32),
+                                            tf.convert_to_tensor(self.sadvantages,dtype=tf.float32))
+                        print("\nShortAgent_learn exec time=",TIME.time() - start)
+                        self.shorttrain += 1
                     # batch 지우기
                     self.sstates, self.sactions, self.std_targets, self.sadvantages = [], [], [], []
-                    print("ShortAgent_learn exec time=",TIME.time() - start)
-                reward += s_reward
+                    
+                # reward += s_reward
                 state = s_next_state
                 if s_done:
                     close_position = finish_info[0]
-                    break # long 거래가 끝났으므로 빠져나간다.
+                    # 따로 reward를 계산해줘야 한다.
+                    percent = - self.env.cal_percent(position, close_position) - self.env.TRANS_FEE * 2
+                    self.env.budget *= (1+percent)
+                    reward = self.env.cal_reward(percent)
+                    break # short 거래가 끝났으므로 빠져나간다.
 
             obs = state
             info = [position, close_position, self.env.curr]

@@ -31,7 +31,7 @@ min_max_cols = ['rsi']
 
 data_attributes = [
             'data_1w', 'data_1d', 'data_4h', 
-            'data_1h', 'data_15m', 'data_5m', 'data_1m'
+            'data_1h', 'data_15m'#'data_5m' 'data_1m'
         ]
 # 04.20 volp는 원래 없어야 해
 drop_list = ['open', 'high', 'low', 'close', 'volume']
@@ -77,15 +77,20 @@ class Data:
         self.data_5m_obs = None
         self.data_1m_obs = None
 
+        self.data_attributes = [
+            'data_1w', 'data_1d', 'data_4h', 
+            'data_1h'# data_15m'#  'data_5m' #'data_1m'
+        ]
+
     def load_data(self, ticker):
         start = time.time()
         self.data_1w = pd.read_csv(f"candle_datas/{ticker}_1w_sub.csv").drop(columns='Unnamed: 0').dropna()
         self.data_1d = pd.read_csv(f"candle_datas/{ticker}_1d_sub.csv").drop(columns='Unnamed: 0').dropna()
         self.data_4h = pd.read_csv(f"candle_datas/{ticker}_4h_sub.csv").drop(columns='Unnamed: 0').dropna()
         self.data_1h = pd.read_csv(f"candle_datas/{ticker}_1h_sub.csv").drop(columns='Unnamed: 0').dropna()
-        self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv").drop(columns='Unnamed: 0').dropna()
-        self.data_5m = load_data_5m(ticker)
-        self.data_1m = load_data_1m(ticker)
+        # self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv").drop(columns='Unnamed: 0').dropna()
+        # self.data_5m = load_data_5m(ticker)
+        # self.data_1m = load_data_1m(ticker)
         print("[Data]: load data completed. time=",time.time()-start)
 
     def load_data_with_normalization(self, ticker):
@@ -99,15 +104,15 @@ class Data:
         self.data_1d = pd.read_csv(f"candle_datas/{ticker}_1d_sub.csv", nrows=35).drop(columns='Unnamed: 0').dropna()
         self.data_4h = pd.read_csv(f"candle_datas/{ticker}_4h_sub.csv", nrows=200).drop(columns='Unnamed: 0').dropna()
         self.data_1h = pd.read_csv(f"candle_datas/{ticker}_1h_sub.csv", nrows=800).drop(columns='Unnamed: 0').dropna()
-        self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
-        self.data_5m = pd.read_csv(f"candle_datas/{ticker}_5m_2023_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
-        self.data_1m = pd.read_csv(f"candle_datas/{ticker}_1m_2023_3_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
+        # self.data_15m = pd.read_csv(f"candle_datas/{ticker}_15m_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
+        # self.data_5m = pd.read_csv(f"candle_datas/{ticker}_5m_2023_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
+        # self.data_1m = pd.read_csv(f"candle_datas/{ticker}_1m_2023_3_sub.csv", nrows=1000).drop(columns='Unnamed: 0').dropna()
         self.load_obs_data()
 
 
     def z_norm(self):
         start = time.time()
-        for attr in data_attributes:
+        for attr in self.data_attributes:
             # 원본을 가져오는거다!!
             data = getattr(self, attr)
 
@@ -120,7 +125,7 @@ class Data:
 
     def mm_norm(self):
         start = time.time()
-        for attr in data_attributes:
+        for attr in self.data_attributes:
             # 원본을 가져오는거다!!
             data = getattr(self, attr)
             for row in min_max_cols:
@@ -138,22 +143,24 @@ class Data:
         self.data_1d_obs = self.data_1d.drop(columns=drop_list)
         self.data_4h_obs = self.data_4h.drop(columns=drop_list)
         self.data_1h_obs = self.data_1h.drop(columns=drop_list)
-        self.data_15m_obs = self.data_15m.drop(columns=drop_list)
-        self.data_5m_obs = self.data_5m.drop(columns=drop_list)
-        self.data_1m_obs = self.data_1m.drop(columns=drop_list)
+        # self.data_15m_obs = self.data_15m.drop(columns=drop_list)
+        # self.data_5m_obs = self.data_5m.drop(columns=drop_list)
+        # self.data_1m_obs = self.data_1m.drop(columns=drop_list)
 
     def get_datas(self):
         # return 값은 list
         return [self.data_1w, self.data_1d, self.data_4h,
-                self.data_1h, self.data_15m, self.data_5m, self.data_1m]
+                self.data_1h]
+        # self.data_15m # self.data_1m] , self.data_5m,
     
     def get_obs_datas(self):
         # return 값은 list
         return [self.data_1w_obs, self.data_1d_obs, self.data_4h_obs,
-                self.data_1h_obs, self.data_15m_obs, self.data_5m_obs, self.data_1m_obs]
+                self.data_1h_obs]
+        # self.data_1m_obs] , self.data_15m_obs
     
     def get_datas_len(self):
-        return self.data_1w.shape[1] + self.data_1d.shape[1] + self.data_4h.shape[1] + self.data_1h.shape[1] + self.data_15m.shape[1] + self.data_5m.shape[1] + self.data_1m.shape[1] - len(drop_list) * 7
+        return self.data_1w.shape[1] + self.data_1d.shape[1] + self.data_4h.shape[1] + self.data_1h.shape[1] - len(drop_list) * len(self.data_attributes) # + self.data_1m.shape[1]
 
     def get_datas_shape(self):
         return len(self.data_1w.columns)
@@ -163,9 +170,9 @@ class Data:
         print(self.data_1d.columns)
         print(self.data_4h.columns)
         print(self.data_1h.columns)
-        print(self.data_15m.columns)
-        print(self.data_5m.columns)
-        print(self.data_1m.columns)
+        # print(self.data_15m.columns)
+        # print(self.data_5m.columns)
+        # print(self.data_1m.columns)
 
 
 if __name__ == '__main__':

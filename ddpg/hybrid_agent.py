@@ -16,6 +16,13 @@ import os
 low_arr = np.asarray([0.0005, 0.0005, 0.25])
 high_arr = np.asarray([0.25, 0.5, 0.75])
 
+# Ticker
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+           "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
+            "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
+            "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
+            "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+
 class Actor:
     def __init__(self, state_size, action_size, action_low, action_high):
         self.state_size = state_size # observation size
@@ -387,7 +394,7 @@ class Hypridagent:
             print("[Save Weight]: ep",ep," save Completed")
 
             with open('./save_weights/train_reward.txt', 'a') as f:
-                f.write(f"ep{ep} reward = {episode_reward}\n")
+                f.write(f"ep{ep} ticker = {tickers[self.env.curr_ticker]}, reward = {episode_reward}, budget={self.env.budget}\n")
 
         # epi_reward 저장
         
