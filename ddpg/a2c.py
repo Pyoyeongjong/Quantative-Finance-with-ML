@@ -390,7 +390,7 @@ class Train:
                 reward = None
                 done = self.env.ticker_is_done()
             else:
-                reward = 0
+                reward = 0.0001
                 done = self.env.ticker_is_done()
 
             return obs, reward, done, info

@@ -54,7 +54,10 @@ class BitcoinTradingEnv(gym.Env):
     # percent = 원금에 대한 거래 손익 비율 ex) 0.05 = 5% 수익 
     def cal_reward(self, percent):
         if percent >= 0:
-            return percent
+            if percent >= 0.01:
+                return (( percent * 100 ) ** 0.95) / 100
+            else:
+                return percent
         else:
             return - (1 / (1 + percent) - 1)
 
@@ -167,12 +170,18 @@ class BitcoinTradingEnv(gym.Env):
             percent = percent - TRANS_FEE
 
         # 강제 청산
-        # if ohlcv['low'] < position / 2 and short == False: # 롱 청산
-        #     done = True
-        # elif ohlcv['high'] < position * 1.5 and short == True: # 숏 청산
-        #     done = True
-
-        info = [ohlcv['close']]
+        if ohlcv['low'] < position / 4 and short == False: # 롱 청산 = 75% 손해일 떄 
+            percent = self.cal_percent(position, position / 4)
+            percent = percent - TRANS_FEE
+            done = True
+            info = [position / 4]
+        elif ohlcv['high'] > position * 1.75 and short == True: # 숏 청산 = 75% 손해일 때
+            percent = - self.cal_percent(position, position * 1.75)
+            percent = percent - TRANS_FEE
+            done = True
+            info = [position * 1.75]
+        else:
+            info = [ohlcv['open']]
         return obs, percent, done, info
 
     def reset(self):
