@@ -1,6 +1,5 @@
 api*.txt
 *.out
 *.csv
-*.h5
 *.whl
 *.zip
