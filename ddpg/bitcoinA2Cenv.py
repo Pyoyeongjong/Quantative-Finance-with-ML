@@ -6,20 +6,33 @@ from data import Data
 import time
 from datetime import datetime
 
+
+def get_long_sl(position):
+    return position * 0.70
+def get_short_sl(position):
+    return position * 1.30
+
 # Ticker
-tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+tickers = ["BTCUSDT","ETHUSDT"]
+# , "BNBUSDT","SOLUSDT","XRPUSDT",
+#            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
+#             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
+#             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
+#             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+# for test
+ticker = ["BTCUSDT"]
+test_tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
-# for test
-ticker = ["BTCUSDT"]
 
 # Timezone
 timezone = ["1w", "1d", "4h", "1h", "15m", "5m", "1m"]
 
 # 파라미터
 TRANS_FEE = 0.04 * 0.01
+HOLD_REWARD = 0.1
 
 # Last Row Index -> get_next_obs 함수 최적화를 위해
 lri = [-1, -1, -1, -1, -1, -1, -1] # last row index
@@ -36,7 +49,7 @@ class BitcoinTradingEnv(gym.Env):
     def __init__(self):
         self.TRANS_FEE = 0.04 * 0.01
         self.curr = 0 # 1분봉 기준 현재 행의 위치
-        self.curr_ticker = 24 # tickers 리스트에서 현재 사용 중인 index 
+        self.curr_ticker = len(tickers)-1 # tickers 리스트에서 현재 사용 중인 index 
         self.done = False # ticker 교체를 해야 하는가?
         self.datas = Data()
         self.datas.load_data_initial(tickers[self.curr_ticker]) # test용
@@ -49,17 +62,7 @@ class BitcoinTradingEnv(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.datas.get_datas_len()-len(self.datas.data_attributes), ), dtype=np.float64) # (data.shape[1], ) = (열, 1)
 
         print("[BitcoinTradingEnv]: Env init OK")
-
-    # Reward 계산 함수
-    # percent = 원금에 대한 거래 손익 비율 ex) 0.05 = 5% 수익 
-    def cal_reward(self, percent):
-        if percent >= 0:
-            if percent >= 0.01:
-                return (( percent * 100 ) ** 0.95) / 100
-            else:
-                return percent
-        else:
-            return - (1 / (1 + percent) - 1)
+        
 
     # 현재 ticker가 끝났는지 확인하는 함수
     def ticker_is_done(self):
@@ -158,7 +161,7 @@ class BitcoinTradingEnv(gym.Env):
             if short: # 숏 추가지원금
                 percent = percent
             # 홀딩 추가지원금
-            percent += 0.1
+            percent += HOLD_REWARD
         # action이 정리(1) 이면
         # obs = 다음 행, reward = 포지션에 대한 이득??? 잘 생각해보자, done = True, info = 대충 없음.
         elif action == 1:
@@ -169,22 +172,25 @@ class BitcoinTradingEnv(gym.Env):
                 percent = -percent
             percent = percent - TRANS_FEE
 
+        long_sl = get_long_sl(position)
+        short_sl = get_short_sl(position)
         # 강제 청산
-        if ohlcv['low'] < position / 4 and short == False: # 롱 청산 = 75% 손해일 떄 
-            percent = self.cal_percent(position, position / 4)
+        if ohlcv['low'] < long_sl and short == False: # 롱 청산 = 50% 손해일 떄 
+            percent = self.cal_percent(position, long_sl)
             percent = percent - TRANS_FEE
             done = True
-            info = [position / 4]
-        elif ohlcv['high'] > position * 1.75 and short == True: # 숏 청산 = 75% 손해일 때
-            percent = - self.cal_percent(position, position * 1.75)
+            info = [long_sl]
+        elif ohlcv['high'] > short_sl and short == True: # 숏 청산 = 50% 손해일 때
+            percent = - self.cal_percent(position, short_sl)
             percent = percent - TRANS_FEE
             done = True
-            info = [position * 1.75]
+            info = [short_sl]
         else:
             info = [ohlcv['open']]
+        
         return obs, percent, done, info
 
-    def reset(self):
+    def reset(self, test):
 
         if self.curr_ticker >= len(tickers) - 1:
             self.curr_ticker = 0
@@ -199,10 +205,22 @@ class BitcoinTradingEnv(gym.Env):
         init_lri()
 
         #self.datas.load_data_initial(tickers[self.curr_ticker])
-        self.datas.load_data_with_normalization(tickers[self.curr_ticker])
+        if test:
+            self.datas.load_test(tickers[self.curr_ticker])
+        else:
+            self.datas.load_data_with_normalization(tickers[self.curr_ticker])
         # self.curr = self.datas.data_1h.shape[0] - 100
         self.curr = 0
         return self.get_next_row_obs()
+    
+    ### 여기부터는 Test함수
+
+    def set_curr_to_timestamp(self, timestamp):
+        while( self.datas.data_1h.loc[self.curr, 'time'] < timestamp ):
+            self.curr += 1
+        return
+
+
 
 
 

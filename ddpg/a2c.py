@@ -10,12 +10,31 @@ from gym.spaces import Discrete, Space
 import matplotlib.pyplot as plt
 import time as TIME
 
+# Test 날짜
+TEST_TIMESTAMP = 1704067200 * 1000
+
+# 관망 리워드
+STAY_REWARD = 0.1
+
+# Reward 계산 함수
+# percent = 원금에 대한 거래 손익 비율 ex) 0.05 = 5% 수익 
+def cal_reward(percent):
+    if percent >= 0:
+        # return percent
+        if percent >= 0.01:
+            return (( percent * 100 ) ** 0.95) / 100
+        else:
+            return percent
+    else:
+        return - (1 / (1 + percent) - 1)
+
 # Ticker
-tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
-           "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
-            "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
-            "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
-            "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+tickers = ["BTCUSDT","ETHUSDT"]
+# , "BNBUSDT","SOLUSDT","XRPUSDT",
+#            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
+#             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
+#             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
+#             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 
 class Actor:
     def __init__(self, state_size, action_dim):
@@ -128,6 +147,15 @@ class Train:
         self.longtrain = 0
         self.shorttrain = 0
 
+    def load_weights(self, path):
+        self.TradeAgent.actor.model.load_weights(f"{path}/Trade_actor.weights.h5")
+        self.TradeAgent.critic.model.load_weights(f"{path}/Trade_critic.weights.h5")
+        self.LongAgent.actor.model.load_weights(f"{path}/Long_actor.weights.h5")
+        self.LongAgent.critic.model.load_weights(f"{path}/Long_critic.weights.h5")
+        self.ShortAgent.actor.model.load_weights(f"{path}/Short_actor.weights.h5")
+        self.ShortAgent.critic.model.load_weights(f"{path}/Short_critic.weights.h5")
+        return
+
     def train(self, max_episode_num):
 
         print("Train start")
@@ -142,7 +170,7 @@ class Train:
             time, episode_reward, done = 0, 0, False
 
             # Env 첫 state 가져오기
-            _, state = self.env.reset()
+            _, state = self.env.reset(test=False)
 
             while not done:
                 
@@ -258,7 +286,7 @@ class Train:
                     return None, None, done, info # None, None, True, _
                 
                 # l_reward(percent) -> reward로 바꿔주기
-                l_reward = self.env.cal_reward(l_reward)
+                l_reward = cal_reward(l_reward)
 
                 # LongAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
                 v_value = self.LongAgent.critic.model(tf.convert_to_tensor(np.array([state]), dtype=tf.float32))
@@ -293,7 +321,7 @@ class Train:
                     # 따로 reward를 계산해줘야 한다.
                     percent = self.env.cal_percent(position, close_position) - self.env.TRANS_FEE * 2
                     self.env.budget *= (1+percent)
-                    reward = self.env.cal_reward(percent)
+                    reward = cal_reward(percent)
                     break # long 거래가 끝났으므로 빠져나간다.
 
             # budget에 넣기
@@ -337,7 +365,7 @@ class Train:
                     return None, None, done, info # None, None, True, _
                 
                 # l_reward(percent) -> reward로 바꿔주기
-                s_reward = self.env.cal_reward(s_reward)
+                s_reward = cal_reward(s_reward)
 
                 # ShortAgent학습 (Main Agent와 빈도를 맞춰줘야 할 것 같다.)
                 v_value = self.ShortAgent.critic.model(tf.convert_to_tensor(np.array([state]), dtype=tf.float32))
@@ -375,7 +403,7 @@ class Train:
                     # 따로 reward를 계산해줘야 한다.
                     percent = - self.env.cal_percent(position, close_position) - self.env.TRANS_FEE * 2
                     self.env.budget *= (1+percent)
-                    reward = self.env.cal_reward(percent)
+                    reward = cal_reward(percent)
                     break # short 거래가 끝났으므로 빠져나간다.
 
             obs = state
@@ -390,15 +418,116 @@ class Train:
                 reward = None
                 done = self.env.ticker_is_done()
             else:
-                reward = 0.0001
+                reward = STAY_REWARD
                 done = self.env.ticker_is_done()
 
             return obs, reward, done, info
+        
+    def test(self, max_episode_num):
+
+        test_timestamp = TEST_TIMESTAMP
+
+        print("Test Start")
+
+        for ep in range(int(max_episode_num)):
+
+            # 에피소드 리셋
+            time, episode_reward, done = 0, 0, False
+
+            # Env 첫 state 가져오기
+            _, state = self.env.reset(test=True)
+
+            # 테스트 할 곳까지 curr 옮기기
+            self.env.set_curr_to_timestamp(test_timestamp)
+
+            while not done:
+                act = self.TradeAgent.get_action(state)
+                act = np.argmax(act)
+
+                next_state, reward, done, info = self.test_action_step(act)
+                if done == True:
+                    break
+                if reward is None:
+                    _, state = self.env.get_next_row_obs()
+                    continue
+                if act < 2:
+                    print("time=",time," act=",act," reward=",reward*100," open=",info[0]," close=",info[1], " curr=",info[2]," budget=",self.env.budget)
+
+            # Test 결과 저장하기
+            with open('./save_weights/train_reward.txt', 'a') as f:
+                f.write(f"ep{ep} ticker = {tickers[self.env.curr_ticker]} budget = {self.env.budget}\n")
+            
+        print("Test Finished")
+
+    def test_action_step(self, action):
+
+        done = False
+        info = ["error", "sorry", self.env.curr]
+
+        # action이 매수(0, 1)이면
+        if action == 0 or action == 1:
+            ohlcv, state = self.env.get_next_row_obs()
+            # state가 존재하지 않을 때
+            if state is None:
+                reward = None
+                # ticker가 끝났는가?
+                if self.env.ticker_is_done():
+                    done = True # ticker끝
+                else:
+                    done = False
+                info = ["obs is none"]
+                return None, None, done, info # None, None, True, _
+            
+            reward = 0
+            position = ohlcv['open']
+            close_position = None
+
+            while(1): # 포지션이 종료될 때 까지
+                if action == 0:
+                    act = self.LongAgent.get_action(state)
+                else:
+                    act = self.ShortAgent.get_action(state)
+                act = np.argmax(act)
+
+                next_state, reward, done, finish_info = self.env.long_or_short_step(act, position, False)
+
+                if next_state is None:
+                    reward = None
+                    # ticker가 끝났는가?
+                    if self.env.ticker_is_done():
+                        done = True # ticker끝
+                    else:
+                        done = False
+                    info = ["obs is none"]
+                    return None, None, done, info # None, None, True, _
+                
+                state = next_state
+                if done:
+                    close_position = finish_info[0]
+                    # 따로 reward를 계산해줘야 한다.
+                    percent = self.env.cal_percent(position, close_position) - self.env.TRANS_FEE * 2
+                    self.env.budget *= (1+percent)
+                    break # 거래가 끝났으므로 빠져나간다.
+                
+            obs = state
+            info = [position, close_position, self.env.curr]
+            return obs, percent, done, info
+        # 관망(2)이면
+        # 그냥 다음행 주기
+        else:
+            _, obs = self.env.get_next_row_obs()
+            done = self.env.ticker_is_done()
+            return obs, 0, done, info
+        
+            
+            
+
         
 def main():
 
     max_episode_num = 200
     agent = Train()
+    agent.load_weights("save_weights/a2c_01_02")
 
     agent.train(max_episode_num)
 

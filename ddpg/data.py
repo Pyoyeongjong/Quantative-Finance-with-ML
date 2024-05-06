@@ -93,6 +93,19 @@ class Data:
         # self.data_1m = load_data_1m(ticker)
         print("[Data]: load data completed. time=",time.time()-start)
 
+    def load_test_data(self, ticker):
+        start = time.time()
+        self.data_1w = pd.read_csv(f"candle_datas_test/{ticker}_1w_sub.csv").drop(columns='Unnamed: 0').dropna()
+        self.data_1d = pd.read_csv(f"candle_datas_test/{ticker}_1d_sub.csv").drop(columns='Unnamed: 0').dropna()
+        self.data_4h = pd.read_csv(f"candle_datas_test/{ticker}_4h_sub.csv").drop(columns='Unnamed: 0').dropna()
+        self.data_1h = pd.read_csv(f"candle_datas_test/{ticker}_1h_sub.csv").drop(columns='Unnamed: 0').dropna()
+        print("[Data]: load test data completed. time=",time.time()-start)
+
+    def load_test(self, ticker):
+        self.load_test(ticker)
+        self.normalization()
+        self.load_obs_data()
+
     def load_data_with_normalization(self, ticker):
         self.load_data(ticker)
         self.normalization()
