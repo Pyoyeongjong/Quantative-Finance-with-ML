@@ -102,7 +102,7 @@ class Data:
         print("[Data]: load test data completed. time=",time.time()-start)
 
     def load_test(self, ticker):
-        self.load_test(ticker)
+        self.load_test_data(ticker)
         self.normalization()
         self.load_obs_data()
 

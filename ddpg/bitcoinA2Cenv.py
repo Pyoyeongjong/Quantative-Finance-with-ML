@@ -6,14 +6,17 @@ from data import Data
 import time
 from datetime import datetime
 
+# 파라미터
+TRANS_FEE = 0.04 * 0.01
+HOLD_REWARD = 0
 
 def get_long_sl(position):
-    return position * 0.70
+    return position * 0.9
 def get_short_sl(position):
-    return position * 1.30
+    return position * 1.1
 
 # Ticker
-tickers = ["BTCUSDT","ETHUSDT"]
+tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
 # , "BNBUSDT","SOLUSDT","XRPUSDT",
 #            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
 #             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
@@ -21,7 +24,7 @@ tickers = ["BTCUSDT","ETHUSDT"]
 #             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 # for test
 ticker = ["BTCUSDT"]
-test_tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
@@ -29,10 +32,6 @@ test_tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
 
 # Timezone
 timezone = ["1w", "1d", "4h", "1h", "15m", "5m", "1m"]
-
-# 파라미터
-TRANS_FEE = 0.04 * 0.01
-HOLD_REWARD = 0.1
 
 # Last Row Index -> get_next_obs 함수 최적화를 위해
 lri = [-1, -1, -1, -1, -1, -1, -1] # last row index
@@ -175,12 +174,12 @@ class BitcoinTradingEnv(gym.Env):
         long_sl = get_long_sl(position)
         short_sl = get_short_sl(position)
         # 강제 청산
-        if ohlcv['low'] < long_sl and short == False: # 롱 청산 = 50% 손해일 떄 
+        if ohlcv['low'] < long_sl and short == False: # 롱 청산 
             percent = self.cal_percent(position, long_sl)
             percent = percent - TRANS_FEE
             done = True
             info = [long_sl]
-        elif ohlcv['high'] > short_sl and short == True: # 숏 청산 = 50% 손해일 때
+        elif ohlcv['high'] > short_sl and short == True: # 숏 청산 
             percent = - self.cal_percent(position, short_sl)
             percent = percent - TRANS_FEE
             done = True
@@ -217,6 +216,7 @@ class BitcoinTradingEnv(gym.Env):
 
     def set_curr_to_timestamp(self, timestamp):
         while( self.datas.data_1h.loc[self.curr, 'time'] < timestamp ):
+            # print(self.datas.data_1h.loc[self.curr, 'time'])
             self.curr += 1
         return
 
