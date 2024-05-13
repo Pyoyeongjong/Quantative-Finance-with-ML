@@ -8,7 +8,7 @@ from datetime import datetime
 
 # 파라미터
 TRANS_FEE = 0.04 * 0.01
-HOLD_REWARD = 0.0
+HOLD_REWARD = 0.1
 
 def get_long_sl(position):
     return position * 0.9
@@ -45,7 +45,7 @@ class BitcoinTradingEnv(gym.Env):
 
     metadata = {'render.modes': ['console']}
 
-    def __init__(self):
+    def __init__(self, time_steps):
         self.TRANS_FEE = 0.04 * 0.01
         self.curr = 0 # 1분봉 기준 현재 행의 위치
         self.curr_ticker = len(tickers)-1 # tickers 리스트에서 현재 사용 중인 index 
@@ -59,6 +59,10 @@ class BitcoinTradingEnv(gym.Env):
         self.long_action_space = spaces.Discrete(2) # 0 = 홀딩, 1 = 정리
         self.short_action_space = spaces.Discrete(2) # 0 = 홀딩, 1 = 정리
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.datas.get_datas_len()-len(self.datas.data_attributes), ), dtype=np.float64) # (data.shape[1], ) = (열, 1)
+
+        # LSTM 용 여러개 obs 저장용
+        self.time_steps = time_steps # 0 이면 DNN 쓰는 거임.
+        self.lstm_obs = []
 
         print("[BitcoinTradingEnv]: Env init OK")
         
@@ -134,7 +138,20 @@ class BitcoinTradingEnv(gym.Env):
         # 1m ohlcv data
         ohlcv = self.get_curr_ohlcv(ohlcv_list)
         # print("get_next_obs() exec time=",time.time() - start)
-        return ohlcv, rows
+
+        if self.time_steps == 0:
+            return ohlcv, rows
+        else: # LSTM 용 Next_OBS
+            self.lstm_obs.append(rows)
+            if len(self.lstm_obs) < self.time_steps:
+                ohlcv, state = self.get_next_row_obs()
+            if len(self.lstm_obs) > self.time_steps:
+                self.lstm_obs.pop(0)
+            # print(ohlcv, self.lstm_obs)
+            return ohlcv, self.lstm_obs
+
+
+
         
     # 손익률 구하는 함수
     def cal_percent(self, before, after):

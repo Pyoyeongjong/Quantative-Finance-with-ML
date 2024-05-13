@@ -46,10 +46,14 @@ tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 
 class Actor:
-    def __init__(self, state_size, action_dim):
+    def __init__(self, time_steps, state_size, action_dim):
+        self.time_steps = time_steps
         self.state_size = state_size # observation size
         self.action_dim = action_dim # 행동 사이즈
-        self.model = self.build_model()
+        if time_steps == 0: # time_steps가 0이면 DNN 사용
+            self.model = self.build_model()
+        else:
+            self.model = self.build_LSTM_model()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -58,12 +62,24 @@ class Actor:
         actions = layers.Dense(self.action_dim, activation='softmax')(out)
         model = keras.Model(inputs=states, outputs=actions)
         return model
+    
+    def build_LSTM_model(self):
+        states = keras.Input(shape=(self.time_steps, self.state_size))
+        out = layers.LSTM(256, return_sequences=True, kernel_initializer=initializers.HeNormal())(states)
+        out = layers.LSTM(128, return_sequences=False, kernel_initializer=initializers.HeNormal())(out)
+        actions = layers.Dense(self.action_dim, activation='softmax')(out)
+        model = keras.Model(inputs=states, outputs=actions)
+        return model
 
 
 class Critic:
-    def __init__(self, state_size):
+    def __init__(self, time_steps, state_size):
+        self.time_steps = time_steps
         self.state_size = state_size
-        self.model = self.build_model()
+        if time_steps == 0:
+            self.model = self.build_model()
+        else:
+            self.model = self.build_LSTM_model()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -72,10 +88,18 @@ class Critic:
         q_values = layers.Dense(1, activation='linear')(out)
         model = keras.Model(inputs=states, outputs=q_values)
         return model
+    
+    def build_LSTM_model(self):
+        states = keras.Input(shape=(self.time_steps, self.state_size))
+        out = layers.LSTM(256, return_sequences=True, kernel_initializer=initializers.HeNormal())(states)
+        out = layers.LSTM(128, return_sequences=False, kernel_initializer=initializers.HeNormal())(out)
+        q_values = layers.Dense(1, activation='linear')(out)
+        model = keras.Model(inputs=states, outputs=q_values)
+        return model
 
 class A2Cagent:
 
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, time_steps, state_dim, action_dim):
         # hyperparameters
         self.GAMMA = 0.99999
         self.BATCH_SIZE = 32
@@ -85,8 +109,8 @@ class A2Cagent:
         self.state_dim = state_dim
         self.action_dim = action_dim
 
-        self.actor = Actor(self.state_dim, self.action_dim)
-        self.critic = Critic(self.state_dim)
+        self.actor = Actor(time_steps, self.state_dim, self.action_dim)
+        self.critic = Critic(time_steps, self.state_dim)
 
         self.actor_opt = Adam(learning_rate=self.ACTOR_LEARNING_RATE)
         self.critic_opt = Adam(learning_rate=self.CRITIC_LEARNING_RATE)
@@ -98,6 +122,7 @@ class A2Cagent:
         state = np.array([state])
         # print("action_state=", state)
         action_probs = self.actor.model(state)
+        # print(action_probs)
         # 합을 1로 만들기
         probs = action_probs[0]
         probs = np.clip(probs, a_min=0, a_max=None)  # 음수가 있을 경우 0으로 설정
@@ -140,11 +165,11 @@ class A2Cagent:
 
 class Train:
 
-    def __init__(self):
-        self.env = BitcoinTradingEnv()
-        self.TradeAgent = A2Cagent(self.env.observation_space.shape[0], 3)
-        self.LongAgent = A2Cagent(self.env.observation_space.shape[0], 2)
-        self.ShortAgent = A2Cagent(self.env.observation_space.shape[0], 2)
+    def __init__(self, time_steps):
+        self.env = BitcoinTradingEnv(time_steps)
+        self.TradeAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 3)
+        self.LongAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+        self.ShortAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
         self.BATCH_SIZE = 32
         self.BATCH_SIZE_LS = 128
         self.decay = INIT_DECAY
@@ -637,9 +662,9 @@ def test():
     agent.test(1)
     
 def main():
-
+    time_steps = 2
     max_episode_num = 200
-    agent = Train()
+    agent = Train(time_steps)
     # agent.load_weights("save_weights/a2c_05")
 
     agent.train(max_episode_num)

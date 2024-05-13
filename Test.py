@@ -1,16 +1,9 @@
-import matplotlib as plt
+data = [[1],[2],[3],[4],[5]]
 
-# 데이터 예제
-data = [1, 2, 2, 3, 4, 5, 5, 5, 6, 7, 8, 9, 10]
+data.append([6])
 
-# 히스토그램 생성
-plt.hist(data, bins=10, alpha=0.75, color='blue')
+print(data)
 
+data.pop(0)
 
-# 그래프 제목 및 라벨 추가
-plt.title('Example Histogram')
-plt.xlabel('Values')
-plt.ylabel('Frequency')
-
-# 그래프 보여주기
-plt.show()
+print(data)
