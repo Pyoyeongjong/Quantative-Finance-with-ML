@@ -450,10 +450,17 @@ class Train:
         print("Test Start")
 
         for ep in range(int(max_episode_num)):
+
+            budget_list = []
+            holdtime_list = []
+            profit_loss = []
+
             # 에피소드 리셋
             time, episode_reward, done = 0, 0, False
             lowest_budget = self.env.budget
             highest_budget = self.env.budget
+
+            budget_list.append(self.env.budget)
 
             # Env 첫 state 가져오기
             _, state = self.env.reset(test=True)
@@ -472,8 +479,17 @@ class Train:
                 if highest_budget < self.env.budget:
                     highest_budget = self.env.budget
                 
+                if act < 2:
+                    holdtime_list.append(info[3])
+                    budget_list.append(info[4])
+                    profit_loss.append(info[5])
+                else:
+                    # budget_list.append(info[3])
+                    pass
+
                 if done == True:
                     break
+
                 if reward is None:
                     _, state = self.env.get_next_row_obs()
                     continue
@@ -483,6 +499,41 @@ class Train:
                 state = next_state
                 if done == True:
                     break
+
+            # 히스토그램, 그래프 출력
+            # 손익 히스토그램 생성
+            pl_bins_list = list(range(-11,50))
+            plt.hist(profit_loss, bins=pl_bins_list, alpha=0.75, color='blue')
+
+            # 그래프 제목 및 라벨 추가
+            plt.title('Profit-Loss')
+            plt.xlabel('PF/LS')
+            plt.ylabel('Frequency')
+            plt.show()  # 그래프 표시
+
+            # budget 그래프 그리기
+            index = list(range(len(budget_list)))
+
+            # 그래프 그리기
+            plt.figure(figsize=(10, 4))  # 그래프 크기 설정
+            plt.plot(index, budget_list, marker=None)  # 선 그래프 그리기
+            plt.title('Budget Over Time')  # 그래프 제목
+            plt.xlabel('Time')  # x축 라벨
+            plt.ylabel('Budget ($)')  # y축 라벨
+            plt.grid(True)  # 그리드 표시
+            plt.xticks(rotation=45)  # x축 라벨 회전
+            plt.tight_layout()  # 레이아웃 조정
+            plt.show()  # 그래프 표시
+
+            # 홀딩시간 히스토그램 생성
+            hold_bins_list = list(range(0, 100, 5))
+            plt.hist(profit_loss, bins=hold_bins_list, alpha=0.75, color='blue')
+
+            # 그래프 제목 및 라벨 추가
+            plt.title('HoldTime')
+            plt.xlabel('HoldTime')
+            plt.ylabel('Frequency')
+            plt.show()
 
             # Test 결과 저장하기
             with open('./save_weights/test_reward.txt', 'a') as f:
@@ -494,6 +545,7 @@ class Train:
 
         done = False
         info = ["error", "sorry", self.env.curr]
+        start_curr = self.env.curr
 
         # action이 매수(0, 1)이면
         if action == 0 or action == 1:
@@ -552,12 +604,26 @@ class Train:
                 
             obs = state
             info = [position, close_position, self.env.curr]
+            ### 데이터 추가
+            # 모델의 거래별 홀딩 시간
+            end_curr = self.env.curr
+            hold_time = end_curr - start_curr
+            info.append(hold_time)
+            # 모델의 budget
+            info.append(self.env.budget)
+            # 모델의 거래 손익 %
+            info.append(percent * 100)
+            
             return obs, percent, done, info
         # 관망(2)이면
         # 그냥 다음행 주기
         else:
             _, obs = self.env.get_next_row_obs()
             done = self.env.ticker_is_done()
+            info = ["STAY", "HOLD", self.env.curr]
+            # 모델의 budget
+            info.append(self.env.budget)
+            # 모델의 거래 손익 %
             return obs, 0, done, info
         
 
@@ -567,7 +633,7 @@ def test():
     agent = Train()
 
     agent.load_weights("save_weights/a2c_06")
-    agent.test(25)
+    agent.test(1)
     
 def main():
 
@@ -578,5 +644,5 @@ def main():
     agent.train(max_episode_num)
 
 if __name__=='__main__':
-    main()
+    test()
             
