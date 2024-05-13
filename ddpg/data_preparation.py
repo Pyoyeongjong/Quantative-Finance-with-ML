@@ -27,11 +27,6 @@ import pprint
 # minmax scaler
 from sklearn.preprocessing import MinMaxScaler
 scaler = MinMaxScaler()
-scale_cols = ['open', 'high', 'low', 'close',
-              'volume', 'sma7', 'sma20', 'sma60',
-              'sma120', 'rsi', 'vol_sma', 'upperband',
-              'lowerband', 'atr', 'macd', 'macdsignal', 'macdhist',
-              'cci', 'adx']
 
 
 kline_interval_mapping = {
@@ -261,14 +256,29 @@ def get_candle_subdatas(candles):
 
 
     # Numpy밖에 못 쓴다 -> .to_numpy()
-    sma7 = (pd.Series(talib.SMA(close, timeperiod=7), name="sma7") - candles['close']) / candles['close'] * 100
-    sma7.name = 'sma7p'
+    sma5 = (pd.Series(talib.SMA(close, timeperiod=5), name="sma5") - candles['close']) / candles['close'] * 100
+    sma5.name = 'sma5p'
+    sma10 = (pd.Series(talib.SMA(close, timeperiod=10), name="sma10") - candles['close']) / candles['close'] * 100
+    sma10.name = 'sma10p'
     sma20 = (pd.Series(talib.SMA(close, timeperiod=20), name="sma20") - candles['close']) / candles['close'] * 100
     sma20.name = 'sma20p'
+    sma40 = (pd.Series(talib.SMA(close, timeperiod=40), name="sma40") - candles['close']) / candles['close'] * 100
+    sma40.name = 'sma40p'
     sma60 = (pd.Series(talib.SMA(close, timeperiod=60), name="sma60") - candles['close']) / candles['close'] * 100
     sma60.name = 'sma60p'
+    sma90 = (pd.Series(talib.SMA(close, timeperiod=90), name="sma90") - candles['close']) / candles['close'] * 100
+    sma90.name = 'sma90p'
     sma120 = (pd.Series(talib.SMA(close, timeperiod=120), name="sma120") - candles['close']) / candles['close'] * 100
     sma120.name = 'sma120p'
+
+    ema5 = (pd.Series(talib.EMA(close, timeperiod=5), name="ema5") - candles['close']) / candles['close'] * 100
+    ema5.name = 'ema5p'
+    ema20 = (pd.Series(talib.EMA(close, timeperiod=20), name="ema20") - candles['close']) / candles['close'] * 100
+    ema20.name = 'ema20p'
+    ema60 = (pd.Series(talib.EMA(close, timeperiod=60), name="ema60") - candles['close']) / candles['close'] * 100
+    ema60.name = 'ema60p'
+    ema120 = (pd.Series(talib.EMA(close, timeperiod=120), name="ema120") - candles['close']) / candles['close'] * 100
+    ema120.name = 'ema120p'
 
     rsi = pd.Series(talib.RSI(close, timeperiod=14), name="rsi")
     volume_sma = pd.Series(talib.SMA(volume, timeperiod=20), name="vol_sma") / candles['volume']
@@ -298,7 +308,7 @@ def get_candle_subdatas(candles):
     # 트렌드
     # inclination = calculate_trends(candles, 0)
     # 연결
-    data = pd.concat([candles, openr, highr, lowr, closer, sma7, sma20, sma60, sma120, rsi, volume_sma, upperband, lowerband, atr, real, adx],
+    data = pd.concat([candles, openr, highr, lowr, closer, sma5, sma10, sma20, sma40, sma60, sma90, sma120, ema5, ema20, ema60, ema120, rsi, volume_sma, upperband, lowerband, atr, real, adx],
                      axis=1)
 
     data.fillna(0, inplace=True)
@@ -309,6 +319,7 @@ def get_subdatas():
     for ticker in tickers:
         for key in kline_interval_mapping.keys():
             if key == '1m':
+                continue
                 for y in range (2017, 2024):
                     for i in range(2, 3):
                         print(f"making {ticker}_{key}_{y}_{i}..")
@@ -328,6 +339,8 @@ def get_subdatas():
                     df_sub = get_candle_subdatas(df)
                     if df_sub is not None :
                         df_sub.to_csv(f"{path}/{ticker}_{key}_{y}_sub.csv")
+            if key == '15m':
+                continue
             else:
                 print(f"making {ticker}_{key}..")
                 df = pd.read_csv(f"{ticker}_{key}.csv")
@@ -348,11 +361,11 @@ def get_subdata_one():
     
 
 if __name__ == '__main__':
-    create_client()
-    get_usdt_balance(_client, True)
+    # create_client()
+    # get_usdt_balance(_client, True)
     get_subdatas()
-    for ticker in tickers:
-        get_candle_datas_to_csv(ticker, "candle_datas_test", "1 Jan, 2024", "30 Apr, 2024")
+    # for ticker in tickers:
+        # get_candle_datas_to_csv(ticker, "candle_datas_test", "1 Jan, 2024", "30 Apr, 2024")
         # get_candle_data_to_csv_5m(ticker, "5m")
         # get_candle_data_to_csv_1m(ticker, "1m")
         # pass
@@ -360,7 +373,3 @@ if __name__ == '__main__':
     # get_subdatas()
 
     
-    
-
-
-

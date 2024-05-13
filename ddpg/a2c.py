@@ -28,8 +28,8 @@ def cal_reward(percent):
         # else:
         #     return percent
     else:
-        # return - (1 / (1 + percent) - 1)
-        return percent
+        return - (1 / (1 + percent) - 1)
+        # return percent
 
 # Ticker
 tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
@@ -480,9 +480,10 @@ class Train:
                     highest_budget = self.env.budget
                 
                 if act < 2:
-                    holdtime_list.append(info[3])
-                    budget_list.append(info[4])
-                    profit_loss.append(info[5])
+                    if len(info) > 3:
+                        holdtime_list.append(info[3])
+                        budget_list.append(info[4])
+                        profit_loss.append(info[5])
                 else:
                     # budget_list.append(info[3])
                     pass
@@ -644,5 +645,5 @@ def main():
     agent.train(max_episode_num)
 
 if __name__=='__main__':
-    test()
+    main()
             

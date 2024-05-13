@@ -13,15 +13,15 @@ scaler_minmax = MinMaxScaler()
 # Z-score Standardization
 scaler_standard = StandardScaler()
 
-cols = ['open', 'high', 'low', 'close',
-        'openp', 'highp', 'lowp', 'closep',
-        'volume', 'sma7p', 'sma20p', 'sma60p',
-        'sma120p', 'rsi', 'volp', 'upperbandp',
-        'lowerbandp', 'atr', 'cci', 'adx']
+
 
 ## z정규화해야할 cols
 z_cols = ['openp', 'highp', 'lowp', 'closep',
-          'sma7p', 'sma20p', 'sma60p','sma120p', 'volp',
+          'sma5p', 'sma10p', 'sma20p', 'sma40p', 'sma60p','sma90p','sma120p', 'ema5p', 'ema20p','ema60p','ema120p','volp',
+          'upperbandp', 'lowerbandp', 'atr', 'cci', 'adx']
+
+z_cols_old = ['openp', 'highp', 'lowp', 'closep',
+          'sma7p',  'sma20p',  'sma60p','sma120p','volp',
           'upperbandp', 'lowerbandp', 'atr', 'cci', 'adx']
 ## z정규화할 cols 
 # z_cols2 = ['atr', 'cci', 'adx']

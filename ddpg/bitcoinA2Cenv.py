@@ -8,7 +8,7 @@ from datetime import datetime
 
 # 파라미터
 TRANS_FEE = 0.04 * 0.01
-HOLD_REWARD = 0
+HOLD_REWARD = 0.0
 
 def get_long_sl(position):
     return position * 0.9
