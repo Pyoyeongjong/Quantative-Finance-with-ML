@@ -227,6 +227,7 @@ class BitcoinTradingEnv(gym.Env):
             self.datas.load_data_with_normalization(tickers[self.curr_ticker])
         # self.curr = self.datas.data_1h.shape[0] - 100
         self.curr = 0
+        self.lstm_obs = []
         return self.get_next_row_obs()
     
     ### 여기부터는 Test함수
