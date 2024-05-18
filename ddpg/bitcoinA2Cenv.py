@@ -8,7 +8,7 @@ from datetime import datetime
 
 # 파라미터
 TRANS_FEE = 0.04 * 0.01
-HOLD_REWARD = 0.1
+HOLD_REWARD = 0.01
 
 def get_long_sl(position):
     return position * 0.9
@@ -23,7 +23,7 @@ tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
 #             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
 #             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 # for test
-ticker = ["BTCUSDT"]
+tickersss= ["BTCUSDT"]
 tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
@@ -137,9 +137,9 @@ class BitcoinTradingEnv(gym.Env):
         
         # 1m ohlcv data
         ohlcv = self.get_curr_ohlcv(ohlcv_list)
-        # print("get_next_obs() exec time=",time.time() - start)
 
         if self.time_steps == 0:
+            # print("get_next_obs() exec time=",time.time() - start)
             return ohlcv, rows
         else: # LSTM 용 Next_OBS
             self.lstm_obs.append(rows)
@@ -148,6 +148,7 @@ class BitcoinTradingEnv(gym.Env):
             if len(self.lstm_obs) > self.time_steps:
                 self.lstm_obs.pop(0)
             # print(ohlcv, self.lstm_obs)
+            # print("get_next_obs() exec time=",time.time() - start)
             return ohlcv, self.lstm_obs
 
 

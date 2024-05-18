@@ -29,12 +29,9 @@ z_cols_old = ['openp', 'highp', 'lowp', 'closep',
 ## min_max cols
 min_max_cols = ['rsi']
 
-data_attributes = [
-            'data_1w', 'data_1d', 'data_4h', 
-            'data_1h', 'data_15m'#'data_5m' 'data_1m'
-        ]
 # 04.20 volp는 원래 없어야 해
-drop_list = ['open', 'high', 'low', 'close', 'volume']
+drop_list = ['open', 'high', 'low', 'close', 'volume', 'sma10p', 'sma40p', 'sma90p', 'ema5p', 'ema20p','ema60p','ema120p',
+          ]
 
 year = 2018
 

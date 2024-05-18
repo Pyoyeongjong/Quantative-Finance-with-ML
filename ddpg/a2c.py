@@ -14,7 +14,7 @@ import time as TIME
 TEST_TIMESTAMP = 1704067200 * 1000
 
 # 관망 리워드
-STAY_REWARD = 0
+STAY_REWARD = 0.000
 STAY_DECAY = 1
 INIT_DECAY = 1
 
@@ -32,13 +32,7 @@ def cal_reward(percent):
         # return percent
 
 # Ticker
-tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
-# , "BNBUSDT","SOLUSDT","XRPUSDT",
-#            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
-#             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
-#             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
-#             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
-
+# 이건 출력용이라 안바꿔도됌
 tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
@@ -54,6 +48,7 @@ class Actor:
             self.model = self.build_model()
         else:
             self.model = self.build_LSTM_model()
+        self.model.summary()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -61,6 +56,7 @@ class Actor:
         out = layers.Dense(128, activation="relu",kernel_initializer=initializers.HeNormal())(out)
         actions = layers.Dense(self.action_dim, activation='softmax')(out)
         model = keras.Model(inputs=states, outputs=actions)
+        
         return model
     
     def build_LSTM_model(self):
@@ -80,6 +76,8 @@ class Critic:
             self.model = self.build_model()
         else:
             self.model = self.build_LSTM_model()
+
+        self.model.summary()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -101,7 +99,7 @@ class A2Cagent:
 
     def __init__(self, time_steps, state_dim, action_dim):
         # hyperparameters
-        self.GAMMA = 0.99999
+        self.GAMMA = 0.9999
         self.BATCH_SIZE = 32
         self.ACTOR_LEARNING_RATE = 0.0001
         self.CRITIC_LEARNING_RATE = 0.001
@@ -162,14 +160,28 @@ class A2Cagent:
         self.actor_opt.apply_gradients(zip(grads, self.actor.model.trainable_variables))
 
 
-
+LONG_TYPE = 0
+SHORT_TYPE = 1
+ALL_TYPE = 2
 class Train:
 
-    def __init__(self, time_steps):
+    def __init__(self, time_steps, agent_type):
+
         self.env = BitcoinTradingEnv(time_steps)
-        self.TradeAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 3)
-        self.LongAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
-        self.ShortAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+
+        self.agent_type = agent_type
+
+        if agent_type == LONG_TYPE:
+            self.TradeAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2) # 0 이 매수, 1 이 관망
+            self.LongAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+        elif agent_type == SHORT_TYPE:
+            self.TradeAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+            self.ShortAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+        else:
+            self.TradeAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 3)
+            self.LongAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+            self.ShortAgent = A2Cagent(time_steps, self.env.observation_space.shape[0], 2)
+
         self.BATCH_SIZE = 32
         self.BATCH_SIZE_LS = 128
         self.decay = INIT_DECAY
@@ -185,10 +197,12 @@ class Train:
     def load_weights(self, path):
         self.TradeAgent.actor.model.load_weights(f"{path}/Trade_actor.weights.h5")
         self.TradeAgent.critic.model.load_weights(f"{path}/Trade_critic.weights.h5")
-        self.LongAgent.actor.model.load_weights(f"{path}/Long_actor.weights.h5")
-        self.LongAgent.critic.model.load_weights(f"{path}/Long_critic.weights.h5")
-        self.ShortAgent.actor.model.load_weights(f"{path}/Short_actor.weights.h5")
-        self.ShortAgent.critic.model.load_weights(f"{path}/Short_critic.weights.h5")
+        if self.agent_type != SHORT_TYPE:
+            self.LongAgent.actor.model.load_weights(f"{path}/Long_actor.weights.h5")
+            self.LongAgent.critic.model.load_weights(f"{path}/Long_critic.weights.h5")
+        if self.agent_type != LONG_TYPE:
+            self.ShortAgent.actor.model.load_weights(f"{path}/Short_actor.weights.h5")
+            self.ShortAgent.critic.model.load_weights(f"{path}/Short_critic.weights.h5")
         return
 
     def train(self, max_episode_num):
@@ -201,25 +215,56 @@ class Train:
             # initialize batch
             states, actions, td_targets, advantages = [], [], [], []
 
+            
+            start = TIME.time()
+
             # 에피소드 리셋
             time, episode_reward, done = 0, 0, False
             lowest_budget = self.env.budget
             highest_budget = self.env.budget
 
+            # print("A:",TIME.time()-start)
+            start = TIME.time()
+
             # Env 첫 state 가져오기
             _, state = self.env.reset(test=False)
+
+            # print("B:",TIME.time()-start)
+            start = TIME.time()
 
             while not done:
                 
                 ta_act = self.TradeAgent.get_action(state)
                 act = np.random.choice(len(ta_act), p=ta_act)
+
+                # All_TYPE일 때
+                # if self.agent_type == ALL_TYPE:
+                #     act = act
+                # # LONG_TYPE
+                # elif self.agent_type == LONG_TYPE:
+                #     if act == 0:
+                #         act = 0
+                #     else:
+                #         act = 2
+                # # SHORT_TYPE
+                # elif self.agent_type == SHORT_TYPE:
+                #     if act == 0:
+                #         act = 1
+                #     else:
+                #         act = 2
+
+                # print("C:",TIME.time()-start)
+                start = TIME.time()
                 # 판단할 수 없을 때는 reward가 반드시 None이다.
                 next_state, reward, done, info = self.action_step(act) 
+                # print("D:",TIME.time()-start)
+                start = TIME.time()
                 if done == True: # Ticker가 종료되었다.
                     break
                 if reward is None: # 종료되지 않고 판단할 수 없다 -> 다음 행을 검토한다.
                     _, state = self.env.get_next_row_obs()
                     continue
+
                 if lowest_budget > self.env.budget:
                     lowest_budget = self.env.budget
                 if highest_budget < self.env.budget:
@@ -242,6 +287,8 @@ class Train:
                 actions.append(ta_act)
                 td_targets.append(y_i)
                 advantages.append(advantage)
+                # print("E:",TIME.time()-start)
+                start = TIME.time()
 
                 if len(states) == self.BATCH_SIZE:
                     # print("*****************************HI Action_learn********************************")
@@ -273,10 +320,12 @@ class Train:
 
             self.TradeAgent.actor.model.save_weights("./save_weights/Trade_actor.weights.h5")
             self.TradeAgent.critic.model.save_weights("./save_weights/Trade_critic.weights.h5")
-            self.LongAgent.actor.model.save_weights("./save_weights/Long_actor.weights.h5")
-            self.LongAgent.critic.model.save_weights("./save_weights/Long_critic.weights.h5")
-            self.ShortAgent.actor.model.save_weights("./save_weights/Short_actor.weights.h5")
-            self.ShortAgent.critic.model.save_weights("./save_weights/Short_critic.weights.h5")
+            if self.agent_type != SHORT_TYPE:
+                self.LongAgent.actor.model.save_weights("./save_weights/Long_actor.weights.h5")
+                self.LongAgent.critic.model.save_weights("./save_weights/Long_critic.weights.h5")
+            if self.agent_type != LONG_TYPE:
+                self.ShortAgent.actor.model.save_weights("./save_weights/Short_actor.weights.h5")
+                self.ShortAgent.critic.model.save_weights("./save_weights/Short_critic.weights.h5")
             print("[Save Weight]: ep",ep," save Completed")
 
             with open('./save_weights/train_reward.txt', 'a') as f:
@@ -656,15 +705,14 @@ class Train:
 
 
 def test():
-    agent = Train()
+    agent = Train(time_steps=0, agent_type=ALL_TYPE)
 
     agent.load_weights("save_weights/a2c_06")
     agent.test(1)
     
 def main():
-    time_steps = 2
     max_episode_num = 200
-    agent = Train(time_steps)
+    agent = Train(time_steps=0, agent_type=ALL_TYPE)
     # agent.load_weights("save_weights/a2c_05")
 
     agent.train(max_episode_num)
