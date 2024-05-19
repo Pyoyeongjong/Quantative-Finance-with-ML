@@ -1,17 +1,20 @@
 import tensorflow as tf
 import numpy as np
+import pandas as pd
 import keras
 from keras import layers, initializers
 from keras.optimizers import Adam
 from keras.models import Sequential
 from replaybuffer import ReplayBuffer
 from bitcoinA2Cenv import BitcoinTradingEnv
+import bitcoinA2Cenv
 from gym.spaces import Discrete, Space
 import matplotlib.pyplot as plt
 import time as TIME
 
 # Test 날짜
 TEST_TIMESTAMP = 1704067200 * 1000
+XLM_TIMESTAMP = 1527814800 * 1000 # 2018/06.01
 
 # 관망 리워드
 STAY_REWARD = 0.000
@@ -33,11 +36,7 @@ def cal_reward(percent):
 
 # Ticker
 # 이건 출력용이라 안바꿔도됌
-tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
-           "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
-            "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
-            "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
-            "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
+tickers = bitcoinA2Cenv.tickers
 
 class Actor:
     def __init__(self, time_steps, state_size, action_dim):
@@ -519,25 +518,23 @@ class Train:
         
     def test(self, max_episode_num):
 
-        test_timestamp = TEST_TIMESTAMP
+        # test_timestamp = TEST_TIMESTAMP
+        test_timestamp = XLM_TIMESTAMP
 
         print("Test Start")
 
         for ep in range(int(max_episode_num)):
 
-            budget_list = []
-            holdtime_list = []
-            profit_loss = []
+            info_list = []
 
             # 에피소드 리셋
             time, episode_reward, done = 0, 0, False
-            lowest_budget = self.env.budget
-            highest_budget = self.env.budget
-
-            budget_list.append(self.env.budget)
 
             # Env 첫 state 가져오기
             _, state = self.env.reset(test=True)
+
+            lowest_budget = self.env.budget
+            highest_budget = self.env.budget
 
             # 테스트 할 곳까지 curr 옮기기
             self.env.set_curr_to_timestamp(test_timestamp)
@@ -545,7 +542,18 @@ class Train:
             while not done:
 
                 act = self.TradeAgent.get_action(state)
+                raw_act = act
                 act = np.argmax(act)
+                # 만약 테스트할 때 일정 확률 이상일 때만 실행시키면??
+                if raw_act[act] < 0.9:
+                    # print("pass")
+                    _, state = self.env.get_next_row_obs()
+                    if self.env.ticker_is_done():
+                        break
+                    continue
+
+                
+
                 # print(act)
                 next_state, reward, done, info = self.test_action_step(act)
                 if lowest_budget > self.env.budget:
@@ -554,10 +562,7 @@ class Train:
                     highest_budget = self.env.budget
                 
                 if act < 2:
-                    if len(info) > 3:
-                        holdtime_list.append(info[3])
-                        budget_list.append(info[4])
-                        profit_loss.append(info[5])
+                    info_list.append(info)
                 else:
                     # budget_list.append(info[3])
                     pass
@@ -569,51 +574,21 @@ class Train:
                     _, state = self.env.get_next_row_obs()
                     continue
                 if act < 2:
-                    print("time=",time," act=",act," reward=",reward*100," open=",info[0]," close=",info[1], " curr=",info[2]," budget=",self.env.budget)
+                    print("time=",time, "raw-act=",raw_act ," act=",act," reward=",reward*100," open=",info[0]," close=",info[1], " curr=",info[2]," budget=",self.env.budget)
 
                 state = next_state
                 if done == True:
                     break
 
-            # 히스토그램, 그래프 출력
-            # 손익 히스토그램 생성
-            pl_bins_list = list(range(-11,50))
-            plt.hist(profit_loss, bins=pl_bins_list, alpha=0.75, color='blue')
-
-            # 그래프 제목 및 라벨 추가
-            plt.title('Profit-Loss')
-            plt.xlabel('PF/LS')
-            plt.ylabel('Frequency')
-            plt.show()  # 그래프 표시
-
-            # budget 그래프 그리기
-            index = list(range(len(budget_list)))
-
-            # 그래프 그리기
-            plt.figure(figsize=(10, 4))  # 그래프 크기 설정
-            plt.plot(index, budget_list, marker=None)  # 선 그래프 그리기
-            plt.title('Budget Over Time')  # 그래프 제목
-            plt.xlabel('Time')  # x축 라벨
-            plt.ylabel('Budget ($)')  # y축 라벨
-            plt.grid(True)  # 그리드 표시
-            plt.xticks(rotation=45)  # x축 라벨 회전
-            plt.tight_layout()  # 레이아웃 조정
-            plt.show()  # 그래프 표시
-
-            # 홀딩시간 히스토그램 생성
-            hold_bins_list = list(range(0, 100, 5))
-            plt.hist(profit_loss, bins=hold_bins_list, alpha=0.75, color='blue')
-
-            # 그래프 제목 및 라벨 추가
-            plt.title('HoldTime')
-            plt.xlabel('HoldTime')
-            plt.ylabel('Frequency')
-            plt.show()
-
             # Test 결과 저장하기
             with open('./save_weights/test_reward.txt', 'a') as f:
                 f.write(f"ep{ep} ticker = {tickers[self.env.curr_ticker]} budget = {self.env.budget} low_b = {lowest_budget} higi_b = {highest_budget}\n")
-            
+
+            # 거래 info 저장하기
+            df = pd.DataFrame(info_list, columns=['open', 'close', 'end', 'start', 'budget', 'percent','position'])
+            print(df)
+            df.to_csv(f"./save_weights/{tickers[self.env.curr_ticker]}_test_result.csv")
+
         print("Test Finished")
 
     def test_action_step(self, action):
@@ -682,12 +657,14 @@ class Train:
             ### 데이터 추가
             # 모델의 거래별 홀딩 시간
             end_curr = self.env.curr
-            hold_time = end_curr - start_curr
-            info.append(hold_time)
+            # hold_time = end_curr - start_curr
+            info.append(start_curr)
             # 모델의 budget
             info.append(self.env.budget)
             # 모델의 거래 손익 %
             info.append(percent * 100)
+            # 모델의 포지션 ( Long, Short )
+            info.append(action)
             
             return obs, percent, done, info
         # 관망(2)이면
@@ -707,8 +684,8 @@ class Train:
 def test():
     agent = Train(time_steps=0, agent_type=ALL_TYPE)
 
-    agent.load_weights("save_weights/a2c_06")
-    agent.test(1)
+    agent.load_weights("save_weights/a2c_05")
+    agent.test(len(tickers))
     
 def main():
     max_episode_num = 200
@@ -718,5 +695,5 @@ def main():
     agent.train(max_episode_num)
 
 if __name__=='__main__':
-    main()
+    test()
             

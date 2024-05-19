@@ -38,18 +38,18 @@ kline_interval_mapping = {
     # "5m": Client.KLINE_INTERVAL_5MINUTE,
     # "1m": Client.KLINE_INTERVAL_1MINUTE,
 }
-tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
-ticker = ["APTUSDT"]
+tickers = ["XLMUSDT"]
 
 # API 파일 경로
-api_key_file_path = "api.txt"
+api_key_file_path = "../api.txt"
 
 # 디렉토리 생성
-data_dir = 'candle_datas_test'
+data_dir = 'candle_datas_testnew'
 
 # 클라이언트 변수
 _client = None
@@ -220,7 +220,7 @@ def get_candle_data_to_csv_5m(ticker, scale): #너무 커서 잘라서 쓰자
 
         print("Data fetching and saving completed.")
 
-def get_candle_datas_to_csv(ticker, path, start_time, end_time):
+def get_candle_datas_to_csv(ticker):
     for key in kline_interval_mapping.keys():
         if key == '1m' or key == '5m': # 1m은 너무커서 좀 그렇다
             continue
@@ -228,7 +228,7 @@ def get_candle_datas_to_csv(ticker, path, start_time, end_time):
         if key == '1w' or key == '1d':
             get_candle_data_to_csv(ticker, key, "1 Jan, 2018", "30 Apr, 2024")
         if key == '4h' or key == '1h':
-            get_candle_data_to_csv(ticker, key, "1 Jan, 2023", "30 Apr, 2024")
+            get_candle_data_to_csv(ticker, key, "1 Jan, 2018", "30 Apr, 2024")
 
 def get_candle_subdatas(candles):
 
@@ -363,13 +363,8 @@ def get_subdata_one():
 if __name__ == '__main__':
     # create_client()
     # get_usdt_balance(_client, True)
+    # get_candle_datas_to_csv("XLMUSDT")
     get_subdatas()
-    # for ticker in tickers:
-        # get_candle_datas_to_csv(ticker, "candle_datas_test", "1 Jan, 2024", "30 Apr, 2024")
-        # get_candle_data_to_csv_5m(ticker, "5m")
-        # get_candle_data_to_csv_1m(ticker, "1m")
-        # pass
 
-    # get_subdatas()
 
     
