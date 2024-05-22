@@ -2,10 +2,9 @@ import pandas as pd
 import numpy as np
 import time
 import os
+import bitcoinA2Cenv
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-
-
 
 # Min-Max Scaling
 scaler_minmax = MinMaxScaler()
@@ -30,8 +29,7 @@ z_cols_old = ['openp', 'highp', 'lowp', 'closep',
 min_max_cols = ['rsi']
 
 # 04.20 volp는 원래 없어야 해
-drop_list = ['open', 'high', 'low', 'close', 'volume', 'sma10p', 'sma40p', 'sma90p', 'ema5p', 'ema20p','ema60p','ema120p',
-          ]
+drop_list = ['open', 'high', 'low', 'close', 'volume', 'sma10p', 'sma40p', 'sma90p', 'ema5p', 'ema20p','ema60p','ema120p']
 
 year = 2018
 
@@ -89,6 +87,34 @@ class Data:
         # self.data_5m = load_data_5m(ticker)
         # self.data_1m = load_data_1m(ticker)
         print("[Data]: load data completed. time=",time.time()-start)
+
+    def make_mean_var_table(self, ticker): # 0이 mean, 1이 variance
+
+        self.load_data(ticker)
+
+        for attr in self.data_attributes:
+            
+            # 원본을 가져오는거다!!
+            data = getattr(self, attr)
+            # inf값 없애기
+            data.replace([np.inf, -np.inf], 0, inplace=True)
+
+            mean_list = []
+            var_list = []
+
+            for col in z_cols:
+                mean = data[col].mean()
+                var = data[col].var()
+
+                print(f"{attr} {col} : ", mean, var)
+
+                mean_list.append(mean)
+                var_list.append(var)
+
+            mean_var_list = [mean_list, var_list]
+            df = pd.DataFrame(mean_var_list, columns=z_cols)
+            df.to_csv(f"mv_table/{ticker}_{attr}_mv_table.csv")
+
 
     def load_test_data(self, ticker):
         start = time.time()
@@ -187,9 +213,6 @@ class Data:
 
 if __name__ == '__main__':
     data = Data()
-
-    data.load_data_with_normalization("BTCUSDT")
-    print(data.data_1d_obs)
 
 
 

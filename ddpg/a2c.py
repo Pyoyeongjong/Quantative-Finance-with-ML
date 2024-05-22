@@ -3,8 +3,6 @@ import numpy as np
 import pandas as pd
 import keras
 from keras import layers, initializers
-from keras.optimizers import Adam
-from keras.models import Sequential
 from replaybuffer import ReplayBuffer
 from bitcoinA2Cenv import BitcoinTradingEnv
 import bitcoinA2Cenv
@@ -109,8 +107,8 @@ class A2Cagent:
         self.actor = Actor(time_steps, self.state_dim, self.action_dim)
         self.critic = Critic(time_steps, self.state_dim)
 
-        self.actor_opt = Adam(learning_rate=self.ACTOR_LEARNING_RATE)
-        self.critic_opt = Adam(learning_rate=self.CRITIC_LEARNING_RATE)
+        self.actor_opt = keras.optimizers.Adam(learning_rate=self.ACTOR_LEARNING_RATE)
+        self.critic_opt = keras.optimizers.Adam(learning_rate=self.CRITIC_LEARNING_RATE)
 
         self.save_epi_reward = []
 
@@ -518,7 +516,7 @@ class Train:
         
     def test(self, max_episode_num):
 
-        # test_timestamp = TEST_TIMESTAMP
+        #test_timestamp = TEST_TIMESTAMP
         test_timestamp = XLM_TIMESTAMP
 
         print("Test Start")
@@ -551,8 +549,6 @@ class Train:
                     if self.env.ticker_is_done():
                         break
                     continue
-
-                
 
                 # print(act)
                 next_state, reward, done, info = self.test_action_step(act)
@@ -684,16 +680,17 @@ class Train:
 def test():
     agent = Train(time_steps=0, agent_type=ALL_TYPE)
 
-    agent.load_weights("save_weights/a2c_05")
+    agent.load_weights("save_weights/a2c_17")
     agent.test(len(tickers))
     
 def main():
-    max_episode_num = 200
+    max_episode_num = 25
     agent = Train(time_steps=0, agent_type=ALL_TYPE)
-    # agent.load_weights("save_weights/a2c_05")
+    agent.load_weights("save_weights/a2c_17")
 
     agent.train(max_episode_num)
 
 if __name__=='__main__':
     test()
+        
             

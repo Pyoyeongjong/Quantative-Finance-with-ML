@@ -43,10 +43,10 @@ tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
-tickers = ["XLMUSDT"]
+tickers = ["ETCUSDT"]
 
 # API 파일 경로
-api_key_file_path = "../api.txt"
+api_key_file_path = "api.txt"
 
 # 디렉토리 생성
 data_dir = 'candle_datas_testnew'
@@ -363,7 +363,7 @@ def get_subdata_one():
 if __name__ == '__main__':
     # create_client()
     # get_usdt_balance(_client, True)
-    # get_candle_datas_to_csv("XLMUSDT")
+    # get_candle_datas_to_csv("ETCUSDT")
     get_subdatas()
 
 
