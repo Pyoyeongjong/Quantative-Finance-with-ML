@@ -2,7 +2,6 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from binance.enums import *
-import time
 
 # A2C
 from a2c import A2Cagent
@@ -201,15 +200,36 @@ def get_usdt_balance(client, isprint):
         print("USDT 잔고를 찾을 수 없습니다.")
     return usdt_balance
 
-# isOrdered는 밖에서 관리하자.
-def future_create_order_market(symbol, side, quantity):
-    f_order = client.futures_create_order(
-        symbol=symbol,
-        side=side,
-        type=FUTURE_ORDER_TYPE_MARKET,
-        quantity=quantity
-    )
-    return f_order
+# ticker 정보찾기
+def find_long_precision(symbol):
+
+    exchange_info = client.get_exchange_info()
+    symbols = exchange_info['symbols']
+
+    for s in symbols:
+        if s['symbol'] == symbol:
+            filters = {f['filterType']: f for f in s['filters']}
+            step_size = Decimal(filters['LOT_SIZE']['stepSize']).normalize()
+            tick_size = Decimal(filters['PRICE_FILTER']['tickSize']).normalize()
+            min_notional = Decimal(filters['NOTIONAL']['minNotional']).normalize()
+            quantity_precision = -step_size.as_tuple().exponent
+            price_precision = -tick_size.as_tuple().exponent
+            return price_precision, quantity_precision, min_notional
+        
+def find_short_precision(symbol):
+    info = client.futures_exchange_info()
+    symbols = info['symbols']
+
+    for s in symbols:
+        if s['symbol'] == symbol:
+            price_precision = s['pricePrecision']
+            quantity_precision = s['quantityPrecision']
+            for f in s['filters']:
+                if f['filterType'] == 'MIN_NOTIONAL':
+                    min_notional = f['notional']
+            return price_precision, quantity_precision, float(min_notional)
+
+
 
 # 롱 전용 오더
 def create_order_market(ticker, quantity):
@@ -226,6 +246,40 @@ def close_order_market(ticker, quantity):
     )
     return order
 
+def create_stop_loss(ticker, quantity, price, lossp, price_precision):
+    decimal_format = f'0.{"0" * (int(price_precision)-1)}1'
+
+    OVER = 1.005 # 트리거 값
+
+    order = client.create_order(
+        symbol=ticker,
+        side=SIDE_SELL,
+        type=ORDER_TYPE_STOP_LOSS_LIMIT, # 왜 LIMIT밖에 안돼
+        timeInForce=TIME_IN_FORCE_GTC, # 주문의 유효시간
+        quantity=quantity,
+        stopPrice = Decimal(price * lossp * OVER).quantize(Decimal(decimal_format), rounding=ROUND_DOWN),
+        price = Decimal(price * lossp).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
+    )
+    return order
+
+def cancel_order(ticker, order):
+    if order == None:
+        return
+    result = client.cancel_order(
+        symbol=ticker,
+        orderId=order['orderId']
+    )
+    return result
+
+def cancel_all_open_order(ticker):
+    orders = client.get_open_orders(symbol=ticker)
+    for order in orders:
+        result = client.cancel_order(
+            symbol=ticker,
+            orderId = order['orderId']
+        )
+    return
+
 # 숏 전용 오더
 def future_create_order_market(symbol, quantity):
     f_order = client.futures_create_order(
@@ -233,6 +287,17 @@ def future_create_order_market(symbol, quantity):
         side=SIDE_SELL,
         type=FUTURE_ORDER_TYPE_MARKET,
         quantity=quantity
+    )
+    return f_order
+
+def future_create_stop_loss(symbol, quantity, price, lossp, price_precision):
+    decimal_format = f'0.{"0" * (int(price_precision)-1)}1'
+    f_order = client.futures_create_order(
+        symbol=symbol,
+        side=SIDE_BUY,
+        type=FUTURE_ORDER_TYPE_STOP_MARKET,
+        quantity=quantity,
+        stopPrice= Decimal(price*lossp).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
     )
     return f_order
 
@@ -245,6 +310,21 @@ def future_close_order_market(symbol, quantity):
     )
     return f_order
 
+def future_cancel_order(symbol, order):
+    if order == None:
+        return
+    f_order = client.futures_cancel_order(
+        symbol=symbol,
+        orderID = order['orderId']
+    )
+    return f_order
+
+def future_cancel_all_open_order(symbol):
+    f_order = client.futures_cancel_all_open_orders(
+        symbol=symbol
+    )
+    return f_order
+
 # 수량 확인
 def get_balance(ticker):
     client.get_asset_balance(asset=ticker)
@@ -254,34 +334,27 @@ LONG_TYPE = 0
 SHORT_TYPE = 1
 ALL_TYPE = 2
 
-myqts = [
-    {"symbol":"BTCUSDT", "lmyqt":0.00001, "smyqt" : 0.002},
-    {"symbol":"ETHUSDT", "lmyqt":0.0001, "smyqt" : 0.006}
-]
+def adjust_precision(precision, number):
 
-def adjust_precision(base, target):
-    # 소수점 아래 자리수 계산
-    base_str = f"{base}"
-    if '.' in base_str:
-        precision = len(base_str.split('.')[1])
-    else:
-        precision = 0
-    # amt를 base의 소수점 자리수에 맞추기
-    decimal_value = Decimal(target).quantize(Decimal(f'1e-{precision}'), rounding=ROUND_DOWN)
-    formatted_target = f"{decimal_value:.{precision}f}"
-    return float(formatted_target)
+    decimal_format = f'0.{"0" * (int(precision)-1)}1'
+    decimal_value = Decimal(number).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
+    return float(decimal_value)
 
 # 각 트레이드 센터에서 Ticker에 대한 모든 것들을 관리한다.
 class TradeCenter:
-    def __init__(self, ticker, agent, amount):
+    def __init__(self, ticker, agent, amount, lossp):
         self.tick = ticker
         self.ticker = f"{ticker}USDT"
         self.amount = amount
+        self.lossp = lossp
 
+        self.stop_order = None
+        #self.set_myqt()
 
-        self.lmqyt = None
-        self.smqyt = None
-        self.set_myqt()
+        # ticker 정보 모으기 
+        # price_precision: 가격 정확도  quantity_precision: 수량 정확도  min_notional: 최소주문금액(USDT)
+        self.l_price_precision, self.l_quantity_precision, self.l_min_notional = find_long_precision(self.ticker)
+        self.s_price_precision, self.s_quantitiy_precision, self.s_min_notional = find_short_precision(self.ticker)
 
         self.data_1w = None
         self.data_1d = None
@@ -336,30 +409,6 @@ class TradeCenter:
         # self.get_obs_row()
         # print(time.time()-start)
 
-    def set_myqt(self):
-        for myqt in myqts:
-            if myqt['symbol'] == self.ticker:
-                self.lmqyt = myqt['lmyqt']
-                self.smqyt = myqt['smyqt']
-                
-        # print(self.lmqyt, self.smqyt)
-
-        
-    def get_short_mqty(self): # 이것도 부정확하다..!
-        infos = client.futures_exchange_info()
-        symbols = infos['symbols']
-        for symbol in symbols:
-            if symbol['symbol'] == 'BTCUSDT':
-                filters = symbol['filters']
-        
-    def get_long_mqty(self): # 이거 부정확하다..!
-        info = client.get_symbol_info(self.ticker)
-        filters = info['filters']
-        for f in filters:
-            if f['filterType'] == 'LOT_SIZE':
-                min_qty = f['minQty']
-                return min_qty
-
     def normalize_obs(self):
         z_cols = ['openp', 'highp', 'lowp', 'closep',
           'sma5p', 'sma20p',  'sma60p', 'sma120p', 'volp', 
@@ -408,6 +457,7 @@ class TradeCenter:
         self.data_1d = get_klines(client=client, symbol=self.ticker, limit=150, interval=Client.KLINE_INTERVAL_1DAY)
         self.data_4h = get_klines(client=client, symbol=self.ticker, limit=150, interval=Client.KLINE_INTERVAL_4HOUR)
         self.data_1h = get_klines(client=client, symbol=self.ticker, limit=150, interval=Client.KLINE_INTERVAL_1HOUR)
+        print("Downloaded data time = ", datetime.fromtimestamp(int(self.data_1h['time'].iloc[-1])/1000))
         # print(time.time() - start)
 
     def update_datas(self): # download_datas와 걸리는 시간이 얼마 차이 안난다.
@@ -446,7 +496,8 @@ class TradeCenter:
 
         for key, info in self.intervals.items():
             data_obs = getattr(self, info['data']+'_obs')
-            row = data_obs.iloc[-1].drop("time")
+            # print(datetime.fromtimestamp(int(row['time'])/1000))
+            row = data_obs.iloc[-2].drop('time')
             row_list.append(row)
 
         obs = np.concatenate(row_list)
@@ -469,8 +520,8 @@ class TradeCenter:
 
     def check_long_amount(self):
         balance = client.get_asset_balance(asset=self.tick)
-        amt = balance['free']
-        return adjust_precision(self.lmqyt, float(amt))
+        amt = float(balance['free']) + float(balance['locked'])
+        return float(amt)
     
     def check_short_amount(self):
         positions = client.futures_position_information()
@@ -481,11 +532,6 @@ class TradeCenter:
         # return adjust_precision(self.smqyt, float(amt))
         return float(amt)
 
-    def chech_position(self):
-        # long chech
-        # short check
-        pass
-
 
     def trade(self, now):
 
@@ -494,25 +540,25 @@ class TradeCenter:
         self.normalize_obs()
         obs = self.get_obs_row()
 
-        if self.check_long_amount() > 0: # if Long
+        if adjust_precision(self.l_quantity_precision, self.check_long_amount()) > 0: # if Long
             act = self.LongAgent.get_action(obs)
             act = np.argmax(act)
             if act == 0: # Hold
                 # Long 유지 알림
                 print(f"{now} Long Holding")
-                bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 롱 포지션 유지")
+                bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 유지")
                 return
             else: # Sell
                 self.close_long(now)
                 return
 
-        elif self.check_short_amount() < 0: # if Short
+        elif adjust_precision(self.s_quantitiy_precision, self.check_short_amount()) < 0: # if Short
             act = self.ShortAgent.get_action(obs)
             act = np.argmax(act)
             if act == 0: # Hold
                 # Short 유지 알림
                 print(f"{now} Short Holding")
-                bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 숏 포지션 유지")
+                bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 유지")
                 return
             else: # Sell
                 self.close_short(now)
@@ -522,7 +568,7 @@ class TradeCenter:
             act = self.TradeAgent.get_action(obs)
             raw_act = act
             print(f"{now} Raw_Act = ",raw_act)
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : Raw_Act = {raw_act}")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : Raw_Act = {raw_act}")
             act = np.argmax(act)
             if raw_act[act] >= 0.9:
                 if act == 0: # Long
@@ -534,7 +580,7 @@ class TradeCenter:
                     
             # 미진입 알림
             print(f"{now} STAY")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 관망")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 관망")
             return
         
     def open_long(self, now):
@@ -544,16 +590,20 @@ class TradeCenter:
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
         amt = available_usdt / tick_price
-        amt = adjust_precision(self.lmqyt, amt)
-        if available_usdt >= 5 and amt > 0 :# 5 이하면 현물 거래가 안된다.
+        # quantity precision 교정
+        amt = adjust_precision(self.l_quantity_precision, amt)
+        if float(available_usdt) >= self.l_min_notional and float(amt) > 0 :
+            # 롱 진입
             create_order_market(self.ticker, amt)
+            # 손절가 설정
+            self.stop_order = create_stop_loss(self.ticker, amt, tick_price, (1-self.lossp), self.l_price_precision)
             # Long 진입 알림
             print(f"{now} Long Entered {tick_price} {amt}")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 롱 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
             return
         else:
             print(f"{now} Long Enter Failed - No Balance")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 롱 진입 자금이 부족합니다.")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 진입 자금이 부족합니다.")
             return
         
     def open_short(self, now):
@@ -564,32 +614,46 @@ class TradeCenter:
         # 포지션 들어가기
         client.futures_change_leverage(symbol=self.ticker, leverage=1)
         amt = available_usdt / tick_price
-        amt = adjust_precision(self.smqyt, amt)
-        if amt >= self.smqyt: # smqyt 는 ticker마다 다른데, 일일이 찾아봐야 하는 것 같다.            
+        # quantitiy precision 교정
+        amt = adjust_precision(self.s_quantitiy_precision, amt)
+        if float(available_usdt) >= self.s_min_notional and float(amt) > 0: # smqyt 는 ticker마다 다른데, 일일이 찾아봐야 하는 것 같다.     
+            # 숏 진입       
             future_create_order_market(self.ticker, amt)
+            # 손절가 설정
+            self.stop_order = future_create_stop_loss(self.ticker, amt, tick_price, (1+self.lossp), self.s_price_precision)
             # Short 진입 알림
             print(f"{now} Short Entered {tick_price} {amt}")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 숏 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
             return
         else:
             print(f"{now} Short Enter Failed - No Balance")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 숏 진입 자금이 부족합니다.")
+            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 진입 자금이 부족합니다.")
             return
         
     def close_long(self, now):
+        cancel_all_open_order(self.ticker)
         amt = self.check_long_amount()
-        close_order_market(self.ticker, amt)
+        amt = adjust_precision(self.l_quantity_precision, amt)
+        if amt <= 0 :
+            return
+        
+        close_order_market(self.ticker, float(amt))
         # Long 거래종료 알림
         print(f"{now} Long closed {amt}")
-        bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 롱 포지션 종료\n종료량 : {amt}")
+        bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 종료\n종료량 : {amt}")
         return
 
     def close_short(self, now):
+        future_cancel_all_open_order(self.ticker)
         amt = self.check_short_amount()
-        future_close_order_market(self.ticker, abs(amt))
+        amt = adjust_precision(self.s_quantitiy_precision, amt)
+        if amt >= 0 :
+            return
+        
+        future_close_order_market(self.ticker, float(abs(amt)))
         # Short 거래종료 알림
         print(f"{now} Short closed {amt}")
-        bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]###\n{now} : 숏 포지션 종료\n종료량 : {amt}")
+        bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 종료\n종료량 : {amt}")
         return
         
 
@@ -598,14 +662,31 @@ class TradeCenter:
 def main():
 
     bot.send_message(chat_id=chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
-    ETH_Center = TradeCenter("ETH", "a2c_17", 1)
+    centers = []
+    ETH_Center = TradeCenter("ETH", "a2c_17", 0.3, 0.1)
+    ADA_Center = TradeCenter("ADA", "a2c_17", 0.3, 0.1)
+    XRP_Center = TradeCenter("XRP", "a2c_17", 0.3, 0.1)
+    centers.append(ETH_Center)
+    centers.append(ADA_Center)
+    centers.append(XRP_Center)
     bot.send_message(chat_id=chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
+
+    now = datetime.now()
+    formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력용
 
     while(1):
         now = datetime.now()
-        if now.minute == 0 and now.second < 5:
-            ETH_Center.trade(now)
-            time.sleep(5)
+        if now.minute == 0 and now.second < 1: # 충분한 딜레이가 있어야 시간봉을 가져올 수 있다.
+            continue
+        else:
+            if now.minute == 0 and now.second < 5:
+                formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력용
+                for center in centers:
+                    center.trade(formatted_now)
+                time_to_sleep = 60 - now.second  
+            else:
+                time_to_sleep = 60 - now.second  
+            time.sleep(time_to_sleep)
 
 if __name__=='__main__':
 
