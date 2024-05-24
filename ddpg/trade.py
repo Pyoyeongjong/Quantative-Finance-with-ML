@@ -2,6 +2,7 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from binance.enums import *
+import logging
 
 # A2C
 from a2c import A2Cagent
@@ -246,22 +247,6 @@ def close_order_market(ticker, quantity):
     )
     return order
 
-def create_stop_loss(ticker, quantity, price, lossp, price_precision):
-    decimal_format = f'0.{"0" * (int(price_precision)-1)}1'
-
-    OVER = 1.005 # 트리거 값
-
-    order = client.create_order(
-        symbol=ticker,
-        side=SIDE_SELL,
-        type=ORDER_TYPE_STOP_LOSS_LIMIT, # 왜 LIMIT밖에 안돼
-        timeInForce=TIME_IN_FORCE_GTC, # 주문의 유효시간
-        quantity=quantity,
-        stopPrice = Decimal(price * lossp * OVER).quantize(Decimal(decimal_format), rounding=ROUND_DOWN),
-        price = Decimal(price * lossp).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
-    )
-    return order
-
 def cancel_order(ticker, order):
     if order == None:
         return
@@ -287,17 +272,6 @@ def future_create_order_market(symbol, quantity):
         side=SIDE_SELL,
         type=FUTURE_ORDER_TYPE_MARKET,
         quantity=quantity
-    )
-    return f_order
-
-def future_create_stop_loss(symbol, quantity, price, lossp, price_precision):
-    decimal_format = f'0.{"0" * (int(price_precision)-1)}1'
-    f_order = client.futures_create_order(
-        symbol=symbol,
-        side=SIDE_BUY,
-        type=FUTURE_ORDER_TYPE_STOP_MARKET,
-        quantity=quantity,
-        stopPrice= Decimal(price*lossp).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
     )
     return f_order
 
@@ -342,10 +316,9 @@ def adjust_precision(precision, number):
 
 # 각 트레이드 센터에서 Ticker에 대한 모든 것들을 관리한다.
 class TradeCenter:
-    def __init__(self, ticker, agent, amount, lossp):
+    def __init__(self, ticker, agent, lossp):
         self.tick = ticker
         self.ticker = f"{ticker}USDT"
-        self.amount = amount
         self.lossp = lossp
 
         self.stop_order = None
@@ -354,7 +327,7 @@ class TradeCenter:
         # ticker 정보 모으기 
         # price_precision: 가격 정확도  quantity_precision: 수량 정확도  min_notional: 최소주문금액(USDT)
         self.l_price_precision, self.l_quantity_precision, self.l_min_notional = find_long_precision(self.ticker)
-        self.s_price_precision, self.s_quantitiy_precision, self.s_min_notional = find_short_precision(self.ticker)
+        self.s_price_precision, self.s_quantity_precision, self.s_min_notional = find_short_precision(self.ticker)
 
         self.data_1w = None
         self.data_1d = None
@@ -408,6 +381,19 @@ class TradeCenter:
         # self.normalize_obs()
         # self.get_obs_row()
         # print(time.time()-start)
+
+    def check_on_trading(self):
+        # 롱 
+        amt = self.check_long_amount()
+        amt = adjust_precision(self.l_quantity_precision, amt)
+        if amt > 0 :
+            return True
+        # 숏
+        amt = self.check_short_amount()
+        amt = adjust_precision(self.s_quantity_precision, amt)
+        if amt < 0:
+            return True
+        return False
 
     def normalize_obs(self):
         z_cols = ['openp', 'highp', 'lowp', 'closep',
@@ -552,7 +538,7 @@ class TradeCenter:
                 self.close_long(now)
                 return
 
-        elif adjust_precision(self.s_quantitiy_precision, self.check_short_amount()) < 0: # if Short
+        elif adjust_precision(self.s_quantity_precision, self.check_short_amount()) < 0: # if Short
             act = self.ShortAgent.get_action(obs)
             act = np.argmax(act)
             if act == 0: # Hold
@@ -584,8 +570,8 @@ class TradeCenter:
             return
         
     def open_long(self, now):
-        # 가용 usdt 확인
-        available_usdt = self.check_long_usdt() * self.amount
+        # 가용 usdt 확인 - 근데 이거 1개 ticker 운용 기준이다..
+        available_usdt = self.check_long_usdt() * Ticker_amt_info.cal_amt(self.tick)
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
@@ -596,7 +582,7 @@ class TradeCenter:
             # 롱 진입
             create_order_market(self.ticker, amt)
             # 손절가 설정
-            self.stop_order = create_stop_loss(self.ticker, amt, tick_price, (1-self.lossp), self.l_price_precision)
+            self.stop_order = self.create_stop_loss(tick_price)
             # Long 진입 알림
             print(f"{now} Long Entered {tick_price} {amt}")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
@@ -608,19 +594,19 @@ class TradeCenter:
         
     def open_short(self, now):
         # 가용 usdt 확인
-        available_usdt = self.check_short_usdt() * self.amount
+        available_usdt = self.check_short_usdt() * Ticker_amt_info.cal_amt(self.tick)
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
         client.futures_change_leverage(symbol=self.ticker, leverage=1)
         amt = available_usdt / tick_price
         # quantitiy precision 교정
-        amt = adjust_precision(self.s_quantitiy_precision, amt)
+        amt = adjust_precision(self.s_quantity_precision, amt)
         if float(available_usdt) >= self.s_min_notional and float(amt) > 0: # smqyt 는 ticker마다 다른데, 일일이 찾아봐야 하는 것 같다.     
             # 숏 진입       
             future_create_order_market(self.ticker, amt)
             # 손절가 설정
-            self.stop_order = future_create_stop_loss(self.ticker, amt, tick_price, (1+self.lossp), self.s_price_precision)
+            self.stop_order = self.future_create_stop_loss(tick_price)
             # Short 진입 알림
             print(f"{now} Short Entered {tick_price} {amt}")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
@@ -632,6 +618,7 @@ class TradeCenter:
         
     def close_long(self, now):
         cancel_all_open_order(self.ticker)
+        
         amt = self.check_long_amount()
         amt = adjust_precision(self.l_quantity_precision, amt)
         if amt <= 0 :
@@ -646,29 +633,99 @@ class TradeCenter:
     def close_short(self, now):
         future_cancel_all_open_order(self.ticker)
         amt = self.check_short_amount()
-        amt = adjust_precision(self.s_quantitiy_precision, amt)
+        amt = adjust_precision(self.s_quantity_precision, amt)
         if amt >= 0 :
             return
-        
         future_close_order_market(self.ticker, float(abs(amt)))
         # Short 거래종료 알림
         print(f"{now} Short closed {amt}")
         bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 종료\n종료량 : {amt}")
         return
+    
+    def create_stop_loss(self, price):
+
+        # 따로 또 계산해줘야함
+        amt = self.check_long_amount()
+        amt = adjust_precision(self.l_quantity_precision, amt)
+
+        if amt <= 0 :
+            return
+
+        decimal_format = f'0.{"0" * (int(self.l_price_precision)-1)}1'
+        OVER = 1.005 # 트리거 값
+
+        order = client.create_order(
+            symbol=self.ticker,
+            side=SIDE_SELL,
+            type=ORDER_TYPE_STOP_LOSS_LIMIT, # 왜 LIMIT밖에 안돼
+            timeInForce=TIME_IN_FORCE_GTC, # 주문의 유효시간
+            quantity=amt,
+            stopPrice = Decimal(price * (1-self.lossp) * OVER).quantize(Decimal(decimal_format), rounding=ROUND_DOWN),
+            price = Decimal(price * (1-self.lossp)).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
+        )
+        return order
+    
+    def future_create_stop_loss(self, symbol, price):
+
+        amt = self.check_short_amount()
+        amt = adjust_precision(self.s_quantity_precision, amt)
+
+        if amt <= 0 :
+            return
         
+        decimal_format = f'0.{"0" * (int(self.s_price_precision)-1)}1'
+        f_order = client.futures_create_order(
+            symbol=symbol,
+            side=SIDE_BUY,
+            type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            quantity=amt,
+            stopPrice= Decimal(price*(1+self.lossp)).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
+        )
 
+        return f_order
+    
+class Ticker_Center:
+    def __init__(self):
+        self.ticker_amt = {}
 
+    def set_tick_amt(self, ticker, amt):
+        self.ticker_amt[ticker] = amt
+
+    def get_on_trading_ticks(self):
+        on_trade = []
+        for center in centers:
+            if center.check_on_trading()==True:
+                on_trade.append(center.tick)
+        return on_trade
+
+    def cal_amt(self, ticker):
+        divider = 1
+        on_trade = self. get_on_trading_ticks()
+        for t in on_trade:
+            # 이미 진행 중이라면
+            if ticker == t:
+                return 0
+            divider = divider - self.ticker_amt[t]
+        return float(self.ticker_amt[ticker] / divider)
+        
+Ticker_amt_info = Ticker_Center()
+centers = []
 
 def main():
 
     bot.send_message(chat_id=chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
-    centers = []
-    ETH_Center = TradeCenter("ETH", "a2c_17", 0.3, 0.1)
-    ADA_Center = TradeCenter("ADA", "a2c_17", 0.3, 0.1)
-    XRP_Center = TradeCenter("XRP", "a2c_17", 0.3, 0.1)
+
+    ETH_Center = TradeCenter("ETH", "a2c_17", 0.1)
+    Ticker_amt_info.set_tick_amt("ETH", 0.3)
+    ADA_Center = TradeCenter("ADA", "a2c_17", 0.1)
+    Ticker_amt_info.set_tick_amt("ADA", 0.3)
+    XRP_Center = TradeCenter("XRP", "a2c_17", 0.1)
+    Ticker_amt_info.set_tick_amt("XRP", 0.3)
+
     centers.append(ETH_Center)
     centers.append(ADA_Center)
     centers.append(XRP_Center)
+
     bot.send_message(chat_id=chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
 
     now = datetime.now()
