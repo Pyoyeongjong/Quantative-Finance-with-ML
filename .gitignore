@@ -4,3 +4,5 @@ api*.txt
 *.whl
 *.zip
 *.h5
+*.png
+*.pyc

@@ -145,6 +145,8 @@ def get_candle_subdatas(candles):
                      axis=1)
 
     data.fillna(0, inplace=True)
+    # inf값 없애기
+    data.replace([np.inf, -np.inf], 0, inplace=True)
     return data
 
 # API 파일 경로
@@ -310,7 +312,10 @@ ALL_TYPE = 2
 
 def adjust_precision(precision, number):
 
-    decimal_format = f'0.{"0" * (int(precision)-1)}1'
+    if precision == 0:
+        decimal_format = "1"
+    else:
+        decimal_format = f'0.{"0" * (int(precision)-1)}1'
     decimal_value = Decimal(number).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
     return float(decimal_value)
 
@@ -381,6 +386,10 @@ class TradeCenter:
         # self.normalize_obs()
         # self.get_obs_row()
         # print(time.time()-start)
+
+    def print_ticker_info(self):
+        print(f"l_price_precision={self.l_price_precision} l_quantity_precision={self.l_quantity_precision} l_min_notional={self.l_min_notional}"+ 
+              f" s_price_precision={self.s_price_precision} s_quantity_precision={self.s_quantity_precision} s_min_notional={self.s_min_notional}")
 
     def check_on_trading(self):
         # 롱 
@@ -526,7 +535,10 @@ class TradeCenter:
         self.normalize_obs()
         obs = self.get_obs_row()
 
-        if adjust_precision(self.l_quantity_precision, self.check_long_amount()) > 0: # if Long
+        curr_price = self.data_1h['close'].iloc[-1]
+
+        if adjust_precision(self.l_quantity_precision, self.check_long_amount()) * curr_price > self.l_min_notional: # if Long
+            # print(adjust_precision(self.l_quantity_precision, self.check_long_amount()), curr_price)
             act = self.LongAgent.get_action(obs)
             act = np.argmax(act)
             if act == 0: # Hold
@@ -538,7 +550,7 @@ class TradeCenter:
                 self.close_long(now)
                 return
 
-        elif adjust_precision(self.s_quantity_precision, self.check_short_amount()) < 0: # if Short
+        elif abs(adjust_precision(self.s_quantity_precision, self.check_short_amount())) * curr_price > self.s_min_notional: # if Short
             act = self.ShortAgent.get_action(obs)
             act = np.argmax(act)
             if act == 0: # Hold
@@ -617,7 +629,7 @@ class TradeCenter:
             return
         
     def close_long(self, now):
-        cancel_all_open_order(self.ticker)
+        cancel_all_open_order(self.ticker) # TODO: 여기서 통신 오류로 오더가 취소 안되면 에러 뜬다.
         
         amt = self.check_long_amount()
         amt = adjust_precision(self.l_quantity_precision, amt)
@@ -652,7 +664,7 @@ class TradeCenter:
             return
 
         decimal_format = f'0.{"0" * (int(self.l_price_precision)-1)}1'
-        OVER = 1.005 # 트리거 값
+        OVER = 0.9 # 트리거 값
 
         order = client.create_order(
             symbol=self.ticker,
@@ -660,8 +672,8 @@ class TradeCenter:
             type=ORDER_TYPE_STOP_LOSS_LIMIT, # 왜 LIMIT밖에 안돼
             timeInForce=TIME_IN_FORCE_GTC, # 주문의 유효시간
             quantity=amt,
-            stopPrice = Decimal(price * (1-self.lossp) * OVER).quantize(Decimal(decimal_format), rounding=ROUND_DOWN),
-            price = Decimal(price * (1-self.lossp)).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
+            stopPrice = Decimal(price * (1-self.lossp)).quantize(Decimal(decimal_format), rounding=ROUND_DOWN),
+            price = Decimal(price * (1-self.lossp)* OVER).quantize(Decimal(decimal_format), rounding=ROUND_DOWN) # LIMIT 값을 stop price 아래로 걸어놓으면 시장가로 팔린다.
         )
         return order
     
@@ -689,6 +701,8 @@ class Ticker_Center:
         self.ticker_amt = {}
 
     def set_tick_amt(self, ticker, amt):
+        # TODO: ticker_amt 합이 1이 넘지 않는 로직을 추가해야 함.
+
         self.ticker_amt[ticker] = amt
 
     def get_on_trading_ticks(self):
@@ -721,10 +735,13 @@ def main():
     Ticker_amt_info.set_tick_amt("ADA", 0.3)
     XRP_Center = TradeCenter("XRP", "a2c_17", 0.1)
     Ticker_amt_info.set_tick_amt("XRP", 0.3)
+    TRX_Center = TradeCenter("TRX", "a2c_17", 0.1)
+    Ticker_amt_info.set_tick_amt("TRX", 0.05)
 
     centers.append(ETH_Center)
     centers.append(ADA_Center)
     centers.append(XRP_Center)
+
 
     bot.send_message(chat_id=chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
 

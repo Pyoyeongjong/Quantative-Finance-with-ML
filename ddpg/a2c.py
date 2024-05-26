@@ -45,7 +45,7 @@ class Actor:
             self.model = self.build_model()
         else:
             self.model = self.build_LSTM_model()
-        self.model.summary()
+        # self.model.summary()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -74,7 +74,7 @@ class Critic:
         else:
             self.model = self.build_LSTM_model()
 
-        self.model.summary()
+        # self.model.summary()
 
     def build_model(self):
         states = keras.Input(shape=(self.state_size,))
@@ -516,7 +516,7 @@ class Train:
         
     def test(self, max_episode_num):
 
-        #test_timestamp = TEST_TIMESTAMP
+        # test_timestamp = TEST_TIMESTAMP
         test_timestamp = XLM_TIMESTAMP
 
         print("Test Start")
