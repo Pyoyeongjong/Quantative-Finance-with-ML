@@ -543,7 +543,7 @@ class Train:
                 raw_act = act
                 act = np.argmax(act)
                 # 만약 테스트할 때 일정 확률 이상일 때만 실행시키면??
-                if raw_act[act] < 0.9:
+                if raw_act[act] < 0.95:
                     # print("pass")
                     _, state = self.env.get_next_row_obs()
                     if self.env.ticker_is_done():
