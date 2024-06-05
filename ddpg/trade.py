@@ -31,6 +31,7 @@ import talib
 # 시간 동기화
 import win32api
 import time
+import concurrent.futures
 from datetime import datetime
 from datetime import timedelta
 
@@ -46,6 +47,12 @@ import pytz
 # CSV파일
 import os
 import csv
+
+tick = ["BTC","ETH", "BNB","SOL","XRP",
+           "DOGE", "ADA", "AVAX","DOT",
+            "LINK", "TRX", "MATIC","BCH", "ICP",
+            "NEAR", "UNI", "LTC", "STX",
+            "FIL", "THETA", "NEO", "FLOW", "XTZ"]
 
 class Binance_Client:
     def __init__(self, api, token, chat_id):
@@ -585,17 +592,23 @@ class TradeCenter:
             
         else: # No position
             act = self.TradeAgent.get_action(obs)
+            lact = self.LongAgent.get_action(obs)
+            sact = self.ShortAgent.get_action(obs)
             raw_act = act
-            print(f"{now} Raw_Act = ",raw_act)
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : Raw_Act = {raw_act}")
+            print(f"{now} Raw_Act = ",raw_act, lact, sact)
+            # bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : Raw_Act = {raw_act}")
             act = np.argmax(act)
+            lact = np.argmax(lact)
+            sact = np.argmax(sact)
             if raw_act[act] >= 0.9:
                 if act == 0: # Long
-                    self.open_long(binance_client, amt_info, now)
-                    return
+                    if lact == 0:
+                        self.open_long(binance_client, amt_info, now)
+                        return
                 elif act == 1:
-                    self.open_short(binance_client, amt_info, now)
-                    return
+                    if sact == 0:
+                        self.open_short(binance_client, amt_info, now)
+                        return
                     
             # 미진입 알림
             print(f"{now} STAY")
@@ -763,65 +776,108 @@ class Ticker_Center:
             if ticker == t:
                 return 0
             divider = divider - self.ticker_amt[t]
-        return float(self.ticker_amt[ticker] / divider)
+
+        amt = float(self.ticker_amt[ticker] / divider)
+        if amt >= 1:
+            return 0
+        else:
+            return amt
 
 
-def main():
+# def main():
 
-    # # ArgumentParser 객체 생성
-    # parser = argparse.ArgumentParser(description="Example script with arguments")
-    # # 인수 추가
-    # parser.add_argument('api', type=str, help='Name of the user')
-    # # 인수 파싱
-    # args = parser.parse_args()
-    # # 인수 사용
-    # print(f"Hello, {args.api}!")
-    # api_key_file_path = args.api
+#     for client in clients:
+#         client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
+#         client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
 
-    for client in clients:
-        client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
-        client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
+#     now = datetime.now()
+#     formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력
 
-    now = datetime.now()
-    formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력
+#     for client in clients:
+#         server_time = client.client.get_server_time()
+#         set_system_time(server_time)
+#         centers = client.TradeCenters
+#         for center in centers:
+#             center.trade(client, formatted_now)
     
+#     while(1):
+#         now = datetime.now()
+#         if now.minute == 0 and now.second < 1: # 충분한 딜레이가 있어야 시간봉을 가져올 수 있다.
+#             continue
+#         else:
+#             if now.minute == 0 and now.second < 5:
+#                 formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력용
 
-    while(1):
+#                 for client in clients:
+#                     server_time = client.client.get_server_time()
+#                     set_system_time(server_time)
+#                     centers = client.TradeCenters
+#                     for center in centers:
+#                         center.trade(client, formatted_now)
+#                 time_to_sleep = 60 - now.second  
+#             else:
+#                 time_to_sleep = 60 - now.second  
+#             time.sleep(time_to_sleep)
+
+def process_client(client):
+    client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
+    client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
+
+    server_time = client.client.get_server_time()
+    set_system_time(server_time)
+    # centers = client.TradeCenters
+    # for center in centers:
+    #     center.trade(client, formatted_now)
+
+def process_trade(center, client, formatted_now):
+    center.trade(client, formatted_now)
+
+
+def periodic_trade(client):
+    while True:
         now = datetime.now()
-        if now.minute == 0 and now.second < 1: # 충분한 딜레이가 있어야 시간봉을 가져올 수 있다.
+        if now.minute == 0 and now.second < 1:
             continue
         else:
             if now.minute == 0 and now.second < 5:
-                formatted_now = now.strftime('%Y-%m-%d %H:%M:%S') # 출력용
+                formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
 
-                for client in clients:
-                    server_time = client.client.get_server_time()
-                    set_system_time(server_time)
-                    centers = client.TradeCenters
-                    for center in centers:
-                        center.trade(client, formatted_now)
+                server_time = client.client.get_server_time()
+                set_system_time(server_time)
+                centers = client.TradeCenters
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    futures = [executor.submit(process_trade, center, client, formatted_now) for center in centers]
+                    concurrent.futures.wait(futures)
                 time_to_sleep = 60 - now.second  
             else:
                 time_to_sleep = 60 - now.second  
             time.sleep(time_to_sleep)
 
+
 # 실매매 클라이언트
 clients = []
+
+def main():
+    # 초기 메시지 전송 및 초기 거래 실행
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(process_client, clients)
+
+    # 각 클라이언트에 대해 주기적인 거래 실행
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(periodic_trade, clients)
+
 # 정보 업뎃용
 main_client = create_client("api.txt")
 
 if __name__=='__main__':
+
     # 로그인 Main Client
     clientA = Binance_Client(api="api.txt",token="6332731064:AAEOlgnRBgM8RZxW9CnkUPJHvEo54SZoEH8", chat_id=1735838793)
-    clientA.create_tradecenter("ETH", "a2c_17", 0.1, 0.3)
-    clientA.create_tradecenter("SOL", "a2c_17", 0.1, 0.3)
-    clientA.create_tradecenter("STX", "a2c_17", 0.1, 0.3)
-    clients.append(clientA)
-
     clientB = Binance_Client(api="api2.txt",token="5954588749:AAHh9g-cKaNL90orGxqurLOcn-GE9bwu5mU", chat_id=6886418534)
-    clientB.create_tradecenter("DOGE", "a2c_17", 0.1, 0.3)
-    clientB.create_tradecenter("STX", "a2c_17", 0.1, 0.3)
-    clientB.create_tradecenter("MATIC", "a2c_17", 0.1, 0.3)
+    for t in tick:
+        clientA.create_tradecenter(t, "a2c_17", 0.1, 0.19)
+        clientB.create_tradecenter(t, "a2c_17", 0.1, 0.19)
+    clients.append(clientA)
     clients.append(clientB)
 
     main()
