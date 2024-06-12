@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 
 # 파라미터
-TRANS_FEE = 0.04 * 0.01
+TRANS_FEE = 0.1 * 0.01
 HOLD_REWARD = 0.01
 
 def get_long_sl(position):
@@ -23,9 +23,9 @@ tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
 #             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
 #             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 # for test
-tickers= ["ETCUSDT"]
+tickers= ["ETCUSDT", "XLMUSDT"]
 
-tickersa = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
@@ -47,7 +47,7 @@ class BitcoinTradingEnv(gym.Env):
     metadata = {'render.modes': ['console']}
 
     def __init__(self, time_steps):
-        self.TRANS_FEE = 0.04 * 0.01
+        self.TRANS_FEE = 0.1 * 0.01
         self.curr = 0 # 1분봉 기준 현재 행의 위치
         self.curr_ticker = len(tickers)-1 # tickers 리스트에서 현재 사용 중인 index 
         self.done = False # ticker 교체를 해야 하는가?

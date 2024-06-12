@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import bitcoinA2Cenv
 
-tickers = ["BTCUSDT", "ETHUSDT", "ETCUSDT"]
+tickers = ["XLMUSDT"]
 
 def change_curr_to_tick():
     for ticker in tickers:
@@ -26,6 +26,7 @@ def print_result():
         profit_loss_short = trade_data[trade_data['position'] == 1]['percent']
 
         budget_list = trade_data['budget']
+        end_list = trade_data['end']
         hold_time = trade_data['end']-trade_data['start']
 
         # 롱/숏 수익률 계산
@@ -46,6 +47,7 @@ def print_result():
         plt.bar(x + width/2, short_budget, width, label='short_profit')
         plt.xlabel('Categories')
         plt.ylabel('Profit')
+        plt.yscale('log')
         plt.title('Long/Short Profit')
         # plt.show()
         plt.savefig(f'{ticker}_LongShort-Profit')
@@ -103,7 +105,7 @@ def print_result():
 
         # 그래프 그리기
         plt.figure(figsize=(10, 4))  # 그래프 크기 설정
-        plt.plot(index, budget_list, marker=None)  # 선 그래프 그리기
+        plt.plot(end_list, budget_list, marker=None)  # 선 그래프 그리기
         plt.title(f'[{ticker}] Budget Over Time')  # 그래프 제목
         plt.xlabel('Time')  # x축 라벨
         plt.ylabel('Budget ($)')  # y축 라벨

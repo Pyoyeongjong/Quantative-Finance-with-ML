@@ -11,8 +11,9 @@ import matplotlib.pyplot as plt
 import time as TIME
 
 # Test 날짜
-TEST_TIMESTAMP = 1704067200 * 1000
-XLM_TIMESTAMP = 1527814800 * 1000 # 2018/06.01
+TEST_TIMESTAMP = 1527814800 * 1000
+HELLO_TIMESTAMP = 1704067200 * 1000
+XLM_TIMESTAMP = 1527814800 * 1000 
 
 # 관망 리워드
 STAY_REWARD = 0.000
@@ -516,8 +517,8 @@ class Train:
         
     def test(self, max_episode_num):
 
-        # test_timestamp = TEST_TIMESTAMP
-        test_timestamp = XLM_TIMESTAMP
+        test_timestamp = TEST_TIMESTAMP
+        # test_timestamp = XLM_TIMESTAMP
 
         print("Test Start")
 
@@ -540,15 +541,26 @@ class Train:
             while not done:
 
                 act = self.TradeAgent.get_action(state)
+                long_act = np.argmax(self.LongAgent.get_action(state))
+                short_act = np.argmax(self.ShortAgent.get_action(state))
                 raw_act = act
                 act = np.argmax(act)
+
                 # 만약 테스트할 때 일정 확률 이상일 때만 실행시키면??
-                if raw_act[act] < 0.95:
+                if raw_act[act] < 0.9:
                     # print("pass")
                     _, state = self.env.get_next_row_obs()
                     if self.env.ticker_is_done():
                         break
                     continue
+                
+                # limit
+                # if act == 0:
+                #     if long_act == 1:
+                #         act = 2
+                # elif act == 1:
+                #     if short_act == 1:
+                #         act = 2
 
                 # print(act)
                 next_state, reward, done, info = self.test_action_step(act)
@@ -618,7 +630,19 @@ class Train:
                     act = self.LongAgent.get_action(state)
                 else:
                     act = self.ShortAgent.get_action(state)
+
                 act = np.argmax(act)
+
+                # Limit
+                # 나는 종료하고 싶은데, trade Agent가 Long을 유지하면 어차피 다시 사야함! 그래서 눈치 보는 것
+                trade_act = np.argmax(self.TradeAgent.get_action(state))
+                if action == 0:
+                    if act == 1 and trade_act == 0:
+                        act = 0
+                if action == 1:
+                    if act == 1 and trade_act == 1:
+                        act = 0
+                    
                 if action == 0:
                     is_short = False
                 else:
@@ -643,7 +667,10 @@ class Train:
                     percent = self.env.cal_percent(position, close_position)
                     if action==1:
                         percent = -percent
-                    percent = percent - self.env.TRANS_FEE * 2
+                    if action == 0 :
+                        percent = percent - self.env.TRANS_FEE * 2
+                    elif action ==1:
+                        percent = percent - 0.04 * 0.01 * 2
                     
                     self.env.budget *= (1+percent)
                     break # 거래가 끝났으므로 빠져나간다.

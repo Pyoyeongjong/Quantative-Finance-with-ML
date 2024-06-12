@@ -48,11 +48,20 @@ import pytz
 import os
 import csv
 
+# 로그
+import logging
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
 tick = ["BTC","ETH", "BNB","SOL","XRP",
            "DOGE", "ADA", "AVAX","DOT",
             "LINK", "TRX", "MATIC","BCH", "ICP",
             "NEAR", "UNI", "LTC", "STX",
             "FIL", "THETA", "NEO", "FLOW", "XTZ"]
+
+tickdd = ["STX"]
 
 class Binance_Client:
     def __init__(self, api, token, chat_id):
@@ -213,13 +222,14 @@ def create_client(api_key_file_path):
 def get_usdt_balance(client, isprint):
     usdt_balance = None
     futures_account = client.futures_account_balance()
+    # print(futures_account)
     for asset in futures_account:
         if asset['asset'] == "USDT":
             usdt_balance = float(asset['balance'])
             break
     if usdt_balance is not None:
         if isprint:
-            print(f"USDT 잔고: {usdt_balance}")
+            print(f"Future USDT 잔고: {usdt_balance}")
     else:
         print("USDT 잔고를 찾을 수 없습니다.")
     return usdt_balance
@@ -418,14 +428,14 @@ class TradeCenter:
         # 롱 
         amt = self.check_long_amount(client)
         amt = adjust_precision(self.l_quantity_precision, amt)
-        if amt * curr_price > self.l_min_notional :
-            return True
+        if amt * curr_price >= self.l_min_notional :
+            return "long"
         # 숏
         amt = self.check_short_amount(client)
         amt = adjust_precision(self.s_quantity_precision, amt)
-        if amt * curr_price < - self.s_min_notional:
-            return True
-        return False
+        if amt * curr_price <= - self.s_min_notional:
+            return "Short"
+        return "Stay"
 
     def normalize_obs(self):
         z_cols = ['openp', 'highp', 'lowp', 'closep',
@@ -541,6 +551,7 @@ class TradeCenter:
         amt = float(balance['free']) + float(balance['locked'])
         return float(amt)
     
+    # amt output < 0
     def check_short_amount(self, client):
         positions = client.futures_position_information()
         amt = None
@@ -564,14 +575,24 @@ class TradeCenter:
         obs = self.get_obs_row()
 
         curr_price = self.data_1h['close'].iloc[-1]
+        tact = self.TradeAgent.get_action(obs)
+        lact = self.LongAgent.get_action(obs)
+        sact = self.ShortAgent.get_action(obs)
+        
 
         if adjust_precision(self.l_quantity_precision, self.check_long_amount(client)) * curr_price > self.l_min_notional: # if Long
             # print(adjust_precision(self.l_quantity_precision, self.check_long_amount()), curr_price)
-            act = self.LongAgent.get_action(obs)
+            act = lact
             act = np.argmax(act)
+
+            # limitAct
+            if act == 1 and np.argmax(tact) == 0:
+                act = 0
+                print("long lack activated")
+
             if act == 0: # Hold
                 # Long 유지 알림
-                print(f"{now} Long Holding")
+                print(f"{now} {self.ticker} Long Holding")
                 bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 유지")
                 return
             else: # Sell
@@ -579,11 +600,17 @@ class TradeCenter:
                 return
 
         elif abs(adjust_precision(self.s_quantity_precision, self.check_short_amount(client))) * curr_price > self.s_min_notional: # if Short
-            act = self.ShortAgent.get_action(obs)
+            act = sact
             act = np.argmax(act)
+
+            # limitAct
+            if act == 1 and np.argmax(tact) == 1:
+                act = 0
+                print("short lack activated")
+
             if act == 0: # Hold
                 # Short 유지 알림
-                print(f"{now} Short Holding")
+                print(f"{now} {self.ticker} Short Holding")
                 bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 유지")
                 return
             else: # Sell
@@ -591,28 +618,24 @@ class TradeCenter:
                 return
             
         else: # No position
-            act = self.TradeAgent.get_action(obs)
-            lact = self.LongAgent.get_action(obs)
-            sact = self.ShortAgent.get_action(obs)
+            act = tact
             raw_act = act
-            print(f"{now} Raw_Act = ",raw_act, lact, sact)
+            print(f"{now} Raw_Act = ",raw_act)
             # bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : Raw_Act = {raw_act}")
             act = np.argmax(act)
-            lact = np.argmax(lact)
-            sact = np.argmax(sact)
+            # lact = np.argmax(lact)
+            # sact = np.argmax(sact)
             if raw_act[act] >= 0.9:
                 if act == 0: # Long
-                    if lact == 0:
-                        self.open_long(binance_client, amt_info, now)
-                        return
+                    self.open_long(binance_client, amt_info, now)
+                    return
                 elif act == 1:
-                    if sact == 0:
-                        self.open_short(binance_client, amt_info, now)
-                        return
+                    self.open_short(binance_client, amt_info, now)
+                    return
                     
             # 미진입 알림
-            print(f"{now} STAY")
-            bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 관망")
+            print(f"{now} {self.ticker} STAY")
+            # bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 관망")
             return
         
     def open_long(self, binance_client, amt_info, now):
@@ -622,9 +645,9 @@ class TradeCenter:
         chat_id = binance_client.chat_id
         centers = binance_client.TradeCenters
 
+
         # 가용 usdt 확인 - 근데 이거 1개 ticker 운용 기준이다..
-        available_usdt = self.check_long_usdt(client) * amt_info.cal_amt(self.tick, client, centers)
-        print( self.check_long_usdt(client), amt_info.cal_amt(self.tick, client, centers), available_usdt)
+        available_usdt = self.check_long_usdt(client) * amt_info.cal_amt(self.tick, client, centers, True)
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
@@ -637,11 +660,11 @@ class TradeCenter:
             # 손절가 설정
             self.stop_order = self.create_stop_loss(client, tick_price)
             # Long 진입 알림
-            print(f"{now} Long Entered {tick_price} {amt}")
+            print(f"{now} {self.ticker} Long Entered {tick_price} {amt}")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
             return
         else:
-            print(f"{now} Long Enter Failed - No Balance")
+            print(f"{now} {self.ticker} Long Enter Failed - No Balance")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 진입 자금이 부족합니다.")
             return
         
@@ -652,7 +675,7 @@ class TradeCenter:
         chat_id = binance_client.chat_id
         centers = binance_client.TradeCenters
         # 가용 usdt 확인
-        available_usdt = self.check_short_usdt(client) * amt_info.cal_amt(self.tick, client, centers)
+        available_usdt = self.check_short_usdt(client) * amt_info.cal_amt(self.tick, client, centers, False)
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
@@ -666,11 +689,11 @@ class TradeCenter:
             # 손절가 설정
             self.stop_order = self.future_create_stop_loss(client, self.ticker, tick_price)
             # Short 진입 알림
-            print(f"{now} Short Entered {tick_price} {amt}")
+            print(f"{now} {self.ticker} Short Entered {tick_price} {amt}")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 진입\n진입가 : {tick_price}\n진입량 : {amt}")
             return
         else:
-            print(f"{now} Short Enter Failed - No Balance")
+            print(f"{now} {self.ticker} Short Enter Failed - No Balance")
             bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 진입 자금이 부족합니다.")
             return
         
@@ -689,7 +712,7 @@ class TradeCenter:
         
         close_order_market(client, self.ticker, float(amt))
         # Long 거래종료 알림
-        print(f"{now} Long closed {amt}")
+        print(f"{now} {self.ticker} Long closed {amt}")
         bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 롱 포지션 종료\n종료량 : {amt}")
         return
 
@@ -706,7 +729,7 @@ class TradeCenter:
             return
         future_close_order_market(client, self.ticker, float(abs(amt)))
         # Short 거래종료 알림
-        print(f"{now} Short closed {amt}")
+        print(f"{now} {self.ticker} Short closed {amt}")
         bot.send_message(chat_id=chat_id, text=f"###[딥러닝 자동매매 봇]-{self.ticker}###\n{now} : 숏 포지션 종료\n종료량 : {amt}")
         return
     
@@ -738,7 +761,7 @@ class TradeCenter:
         amt = self.check_short_amount(client)
         amt = adjust_precision(self.s_quantity_precision, amt)
 
-        if amt <= 0 :
+        if amt >= 0 :
             return
         
         decimal_format = f'0.{"0" * (int(self.s_price_precision)-1)}1'
@@ -746,12 +769,14 @@ class TradeCenter:
             symbol=symbol,
             side=SIDE_BUY,
             type=FUTURE_ORDER_TYPE_STOP_MARKET,
-            quantity=amt,
+            quantity=abs(amt),
             stopPrice= Decimal(price*(1+self.lossp)).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
         )
 
         return f_order
     
+
+    # 솔직히 매우 비효율적이다
 class Ticker_Center:
     def __init__(self):
         self.ticker_amt = {}
@@ -762,20 +787,31 @@ class Ticker_Center:
         self.ticker_amt[ticker] = amt
 
     def get_on_trading_ticks(self, client, centers):
-        on_trade = []
+        on_trade_long = []
+        on_trade_short = []
         for center in centers:
-            if center.check_on_trading(client)==True:
-                on_trade.append(center.tick)
-        return on_trade
+            now = center.check_on_trading(client)
+            if now == "Long":
+                on_trade_long.append(center.tick)
+            elif now == "Short":
+                on_trade_short.append(center.tick)
+        return on_trade_long, on_trade_short
 
-    def cal_amt(self, ticker, client, centers):
+    def cal_amt(self, ticker, client, centers, long):
         divider = 1
-        on_trade = self.get_on_trading_ticks(client, centers)
-        for t in on_trade:
-            # 이미 진행 중이라면
-            if ticker == t:
-                return 0
-            divider = divider - self.ticker_amt[t]
+        on_trade_long, on_trade_short = self.get_on_trading_ticks(client, centers)
+        if long==True:
+            for t in on_trade_long:
+                # 이미 진행 중이라면
+                if ticker == t:
+                    return 0
+                divider = divider - self.ticker_amt[t]
+        elif long==False:
+            for t in on_trade_short:
+                # 이미 진행 중이라면
+                if ticker == t:
+                    return 0
+                divider = divider - self.ticker_amt[t]
 
         amt = float(self.ticker_amt[ticker] / divider)
         if amt >= 1:
@@ -823,14 +859,57 @@ def process_client(client):
     client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\nCOPYRIGHT by 표영종")
     client.bot.send_message(chat_id=client.chat_id, text="###[딥러닝 자동매매 봇]###\n데이터 로드 OK, 매매 시작")
 
+    now = datetime.now()
+    formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
     server_time = client.client.get_server_time()
     set_system_time(server_time)
-    # centers = client.TradeCenters
+    centers = client.TradeCenters
     # for center in centers:
+    #     print(center.tick)
     #     center.trade(client, formatted_now)
 
 def process_trade(center, client, formatted_now):
     center.trade(client, formatted_now)
+
+def printbudget(binance_client):
+
+    client = binance_client.client
+    # 계좌 정보 가져오기
+    account_info = client.get_account()
+    budget = 0
+
+    # 잔고가 0보다 큰 자산만 필터링하여 출력
+    for balance in account_info['balances']:
+        asset = balance['asset']
+        
+        total_balance = float(balance['free']) + float(balance['locked'])
+        if total_balance > 0:
+            # BTC/USDT 현재 가격 가져오기
+            if asset=="USDT":
+                budget += total_balance
+                continue
+            ticker = client.get_symbol_ticker(symbol=f"{asset}USDT")
+            price = float(ticker['price'])
+            # print(f"현재 {asset} 가격: {ticker['price']}")
+            # print(f"{asset}: {total_balance}")
+            budget += price * total_balance
+
+    # print(budget)
+    # print(client.get_asset_balance(asset='BTC'))
+    future_budget = get_usdt_balance(client, False)
+
+    # 현재 포지션 정보 얻기 (선물 계정)
+    positions = client.futures_account()['positions']
+
+    # 각 포지션의 미실현 PnL 출력
+    for position in positions:
+        symbol = position['symbol']
+        unrealized_pnl = float(position['unrealizedProfit'])
+        if unrealized_pnl != 0:
+            future_budget += float(unrealized_pnl)
+
+    binance_client.bot.send_message(chat_id=binance_client.chat_id, text=f"###[딥러닝 자동매매 봇]###\n현재 총 잔고:{budget+future_budget}\n롱:{budget}\n숏:{future_budget}")
+    return float(budget), float(future_budget)
 
 
 def periodic_trade(client):
@@ -841,13 +920,13 @@ def periodic_trade(client):
         else:
             if now.minute == 0 and now.second < 5:
                 formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
-
                 server_time = client.client.get_server_time()
                 set_system_time(server_time)
                 centers = client.TradeCenters
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    futures = [executor.submit(process_trade, center, client, formatted_now) for center in centers]
-                    concurrent.futures.wait(futures)
+                for center in centers:
+                    print(center.tick)
+                    center.trade(client, formatted_now)
+                printbudget(client)
                 time_to_sleep = 60 - now.second  
             else:
                 time_to_sleep = 60 - now.second  
@@ -872,12 +951,11 @@ main_client = create_client("api.txt")
 if __name__=='__main__':
 
     # 로그인 Main Client
-    clientA = Binance_Client(api="api.txt",token="6332731064:AAEOlgnRBgM8RZxW9CnkUPJHvEo54SZoEH8", chat_id=1735838793)
+    clientA = Binance_Client(api="api3.txt",token="6332731064:AAEOlgnRBgM8RZxW9CnkUPJHvEo54SZoEH8", chat_id=1735838793)
     clientB = Binance_Client(api="api2.txt",token="5954588749:AAHh9g-cKaNL90orGxqurLOcn-GE9bwu5mU", chat_id=6886418534)
     for t in tick:
-        clientA.create_tradecenter(t, "a2c_17", 0.1, 0.19)
-        clientB.create_tradecenter(t, "a2c_17", 0.1, 0.19)
+        clientA.create_tradecenter(t, "a2c_17", 0.1, 0.24)
+        clientB.create_tradecenter(t, "a2c_17", 0.1, 0.24)
     clients.append(clientA)
     clients.append(clientB)
-
     main()
