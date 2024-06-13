@@ -6,3 +6,4 @@ api*.txt
 *.h5
 *.png
 *.pyc
+*.log
