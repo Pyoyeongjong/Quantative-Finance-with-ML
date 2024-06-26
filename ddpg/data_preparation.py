@@ -361,8 +361,8 @@ def get_subdata_one():
     
 
 if __name__ == '__main__':
-    # create_client()
-    # get_usdt_balance(_client, True)
+    create_client()
+    get_usdt_balance(_client, True)
     # get_candle_datas_to_csv("ETCUSDT")
     get_subdatas()
 

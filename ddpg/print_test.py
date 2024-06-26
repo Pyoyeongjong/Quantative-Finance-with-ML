@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import bitcoinA2Cenv
 
-tickers = ["XLMUSDT"]
+tickers = ["TRXUSDT", "ICPUSDT"]
 
 def change_curr_to_tick():
     for ticker in tickers:

@@ -3,6 +3,7 @@ import numpy as np
 import time
 import os
 import bitcoinA2Cenv
+import math
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
@@ -72,6 +73,11 @@ class Data:
         self.data_5m_obs = None
         self.data_1m_obs = None
 
+        self.data_1w_mv = None
+        self.data_1d_mv = None
+        self.data_4h_mv = None
+        self.data_1h_mv = None
+
         self.data_attributes = [
             'data_1w', 'data_1d', 'data_4h', 
             'data_1h'# data_15m'#  'data_5m' #'data_1m'
@@ -134,6 +140,16 @@ class Data:
         self.normalization()
         self.load_obs_data()
         # print(self.data_1w, self.data_1d, self.data_4h, self.data_1h,self.data_15m, self.data_5m, self.data_1m)
+
+    def load_test_with_mv(self, ticker):
+        self.load_test_data(ticker)
+        self.download_mv(ticker)
+        self.z_norm_with_mv()
+        self.mm_norm()
+        self.load_obs_data()
+        print("OK")
+
+  
     
     def load_data_initial(self,ticker):
         self.data_1w = pd.read_csv(f"candle_datas/{ticker}_1w_sub.csv", nrows=5).drop(columns='Unnamed: 0').dropna()
@@ -158,6 +174,28 @@ class Data:
                 data[row] = scaler_standard.fit_transform(data[[row]])
 
         print("[Data]: z_norm completed. time=",time.time()-start)
+
+    def download_mv(self, ticker):
+        start = time.time()
+        self.data_1w_mv = pd.read_csv(f"mv_table/{ticker}_data_1w_mv_table.csv").drop(columns='Unnamed: 0').dropna().apply(pd.to_numeric)
+        self.data_1d_mv = pd.read_csv(f"mv_table/{ticker}_data_1d_mv_table.csv").drop(columns='Unnamed: 0').dropna().apply(pd.to_numeric)
+        self.data_4h_mv = pd.read_csv(f"mv_table/{ticker}_data_4h_mv_table.csv").drop(columns='Unnamed: 0').dropna().apply(pd.to_numeric)
+        self.data_1h_mv = pd.read_csv(f"mv_table/{ticker}_data_1h_mv_table.csv").drop(columns='Unnamed: 0').dropna().apply(pd.to_numeric)
+
+    def z_norm_with_mv(self):
+
+        for attr in self.data_attributes:
+            # 원본을 가져오는거다!!
+            data = getattr(self, attr)
+            data_mv = getattr(self, attr+"_mv")
+
+            # inf값 없애기
+            data.replace([np.inf, -np.inf], 0, inplace=True)
+            for col in z_cols:
+                scaler_standard.mean_ = np.array([data_mv[col][0]])
+                scaler_standard.scale_ = np.array([math.sqrt(data_mv[col][1])])
+                data[col] = scaler_standard.transform(data[[col]])
+
 
     def mm_norm(self):
         start = time.time()
@@ -213,6 +251,8 @@ class Data:
 
 if __name__ == '__main__':
     data = Data()
+    data.load_test_with_mv("BTCUSDT")
+
 
 
 

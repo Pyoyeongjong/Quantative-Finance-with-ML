@@ -224,7 +224,7 @@ def create_client(api_key_file_path):
     logger.info("Log in OK")
     return client
 
-# USDT 잔고 출력
+# Future USDT 잔고 출력
 def get_usdt_balance(client):
     usdt_balance = None
     futures_account = client.futures_account_balance()
@@ -233,10 +233,57 @@ def get_usdt_balance(client):
             usdt_balance = float(asset['balance'])
             break
     if usdt_balance is not None:
-        logger.info(f"Future USDT 잔고: {usdt_balance}")
+        logger.info(f"Future Total USDT: {usdt_balance}")
     else:
-        logger.error("USDT 잔고를 찾을 수 없습니다.")
+        logger.error("Can't Find Future USDT.")
     return usdt_balance
+
+# client 가용 usdt long
+def check_long_usdt(client):
+    balance = client.get_asset_balance(asset='USDT')
+    amt = balance['free']
+    return float(amt)
+
+# client 가용 usdt short
+def check_short_usdt(client):
+    futures_account = client.futures_account_balance()
+    for asset in futures_account:
+        if asset['asset'] == "USDT":
+            amt = asset['availableBalance']
+    return float(amt)
+
+# Spot 지갑에서 Futures 지갑으로 USDT 옮기기 또는 그 반대
+# type 1이 spot -> future 2가 future->sopt
+def transfer_spot_futures(client, amount, type):
+    if amount <= 0:
+        return
+    try:
+        # Spot에서 USD-M Futures 지갑으로의 전송
+        result = client.futures_account_transfer(asset='USDT', amount=amount, type=type)
+        logger.info("Transfer successful:", result)
+    except Exception as e:
+        logger.error("An error occurred:", str(e))
+
+# client usdt 가능한 전부 옮기기
+# type 1이 spot -> future 2가 future->sopt
+def transfer_usdt(client, type):
+    long_usdt = check_long_usdt(client)
+    short_usdt = check_short_usdt(client)
+
+    print(long_usdt, short_usdt)
+
+    # spot ->
+    if type==1:
+        if long_usdt > 0 :
+            transfer_spot_futures(client, long_usdt, type)
+        return check_short_usdt(client)
+    else:
+        if short_usdt > 0:
+            transfer_spot_futures(client, short_usdt, type)
+        return check_long_usdt(client)
+    
+    
+
 
 # ticker 정보찾기
 def find_long_precision(client, symbol):
@@ -373,15 +420,6 @@ def adjust_precision(precision, number):
         decimal_format = f'0.{"0" * (int(precision)-1)}1'
     decimal_value = Decimal(number).quantize(Decimal(decimal_format), rounding=ROUND_DOWN)
     return float(decimal_value)
-
-# Spot 지갑에서 Futures 지갑으로 USDT 옮기기 또는 그 반대
-def transfer_spot_futures(client, amount, type):
-    try:
-        # Spot에서 USD-M Futures 지갑으로의 전송
-        result = client.futures_account_transfer(asset='USDT', amount=amount, type=type)
-        logger.info("Transfer successful:", result)
-    except Exception as e:
-        logger.error("An error occurred:", str(e))
 
 # 각 트레이드 센터에서 Ticker에 대한 모든 것들을 관리한다.
 class TradeCenter:
@@ -534,18 +572,6 @@ class TradeCenter:
         obs = np.concatenate(row_list)
         self.obs_len = len(obs)
         return obs
-    
-    def check_long_usdt(self, client):
-        balance = client.get_asset_balance(asset='USDT')
-        amt = balance['free']
-        return float(amt)
-    
-    def check_short_usdt(self, client):
-        futures_account = client.futures_account_balance()
-        for asset in futures_account:
-            if asset['asset'] == "USDT":
-                amt = asset['availableBalance']
-        return float(amt)
 
     def check_long_amount(self, client):
         balance = client.get_asset_balance(asset=self.tick)
@@ -645,13 +671,18 @@ class TradeCenter:
         chat_id = binance_client.chat_id
         centers = binance_client.TradeCenters
 
-
         # 가용 usdt 확인 - 근데 이거 1개 ticker 운용 기준이다..
-        available_usdt = self.check_long_usdt(client) * amt_info.cal_amt(self.tick, client, centers, True)
+        available_usdt = transfer_usdt(client, 2)
+        long_budget, short_budget = printbudget(binance_client, False)
+        target_usdt = (long_budget+short_budget) * amt_info.get_tick_amt(self.tick)
+
+        if available_usdt < target_usdt:
+            target_usdt = available_usdt
+
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
-        amt = available_usdt / tick_price
+        amt = target_usdt / tick_price
         # quantity precision 교정
         amt = adjust_precision(self.l_quantity_precision, amt)
         if float(available_usdt) >= self.l_min_notional and float(amt) > 0 :
@@ -674,13 +705,20 @@ class TradeCenter:
         bot = binance_client.bot
         chat_id = binance_client.chat_id
         centers = binance_client.TradeCenters
-        # 가용 usdt 확인
-        available_usdt = self.check_short_usdt(client) * amt_info.cal_amt(self.tick, client, centers, False)
+
+        # 가용 usdt 확인 - 근데 이거 1개 ticker 운용 기준이다..
+        available_usdt = transfer_usdt(client, 1)
+        long_budget, short_budget = printbudget(binance_client, False)
+        target_usdt = (long_budget+short_budget) * amt_info.get_tick_amt(self.tick)
+
+        if available_usdt < target_usdt:
+            target_usdt = available_usdt
+
         # 현재 비트코인 시세 확인
         tick_price = self.data_1h['close'].iloc[-1]
         # 포지션 들어가기
         client.futures_change_leverage(symbol=self.ticker, leverage=1)
-        amt = available_usdt / tick_price
+        amt = target_usdt / tick_price
         # quantitiy precision 교정
         amt = adjust_precision(self.s_quantity_precision, amt)
         if float(available_usdt) >= self.s_min_notional and float(amt) > 0: # smqyt 는 ticker마다 다른데, 일일이 찾아봐야 하는 것 같다.     
@@ -793,6 +831,9 @@ class Ticker_Center:
 
         self.ticker_amt[ticker] = amt
 
+    def get_tick_amt(self, ticker):
+        return self.ticker_amt[ticker]
+
     def get_on_trading_ticks(self, client, centers):
         on_trade_long = []
         on_trade_short = []
@@ -842,7 +883,7 @@ def process_client(client):
 def process_trade(center, client, formatted_now):
     center.trade(client, formatted_now)
 
-def printbudget(binance_client):
+def printbudget(binance_client, isprint):
 
     client = binance_client.client
     # 계좌 정보 가져오기
@@ -875,7 +916,10 @@ def printbudget(binance_client):
         if unrealized_pnl != 0:
             future_budget += float(unrealized_pnl)
 
-    binance_client.bot.send_message(chat_id=binance_client.chat_id, text=f"###[딥러닝 자동매매 봇]###\n현재 총 잔고:{budget+future_budget}\n롱:{budget}\n숏:{future_budget}")
+    if isprint:
+        long_usdt = check_long_usdt(client)
+        short_usdt = check_short_usdt(client)
+        binance_client.bot.send_message(chat_id=binance_client.chat_id, text=f"###[딥러닝 자동매매 봇]###\n현재 총 잔고:{budget+future_budget}\n롱 진입량:{budget-long_usdt}\n숏 진입량:{future_budget-short_usdt}")
     logger.info(f"{binance_client.name} bugdet={budget+future_budget}")
     return float(budget), float(future_budget)
 
@@ -893,7 +937,7 @@ def periodic_trade(client):
                 centers = client.TradeCenters
                 for center in centers:
                     center.trade(client, formatted_now)
-                printbudget(client)
+                printbudget(client, True)
                 time_to_sleep = 60 - now.second  
             else:
                 time_to_sleep = 60 - now.second
@@ -924,11 +968,12 @@ if __name__=='__main__':
     clientA = Binance_Client(name="pyjong", api="api3.txt",token="6332731064:AAEOlgnRBgM8RZxW9CnkUPJHvEo54SZoEH8", chat_id=1735838793)
     clientB = Binance_Client(name="minsu", api="api2.txt",token="5954588749:AAHh9g-cKaNL90orGxqurLOcn-GE9bwu5mU", chat_id=6886418534)
     for t in tick:
-        clientA.create_tradecenter(t, "a2c_17", 0.1, 0.24)
-        clientB.create_tradecenter(t, "a2c_17", 0.1, 0.24)
+        clientA.create_tradecenter(t, "a2c_17", 0.1, 0.12)
+        clientB.create_tradecenter(t, "a2c_17", 0.1, 0.12)
     clients.append(clientA)
     clients.append(clientB)
+
     for client in clients:
-        printbudget(client)
+        printbudget(client, True)
+
     main()
-    # transfer_spot_futures(main_client, 10, 1) # 1이 spot -> future 2가 future->sopt

@@ -23,9 +23,9 @@ tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT"]
 #             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
 #             "FILUSDT", "THETAUSDT", "NEOUSDT", "FLOWUSDT", "XTZUSDT"]
 # for test
-tickers= ["ETCUSDT", "XLMUSDT"]
+tickerss= ["ETCUSDT", "XLMUSDT"]
 
-tickerss = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
+tickers = ["BTCUSDT","ETHUSDT", "BNBUSDT","SOLUSDT","XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT","DOTUSDT",
             "LINKUSDT", "TRXUSDT", "MATICUSDT","BCHUSDT", "ICPUSDT",
             "NEARUSDT", "UNIUSDT", "APTUSDT", "LTCUSDT", "STXUSDT",
@@ -224,7 +224,7 @@ class BitcoinTradingEnv(gym.Env):
 
         #self.datas.load_data_initial(tickers[self.curr_ticker])
         if test:
-            self.datas.load_test(tickers[self.curr_ticker])
+            self.datas.load_test_with_mv(tickers[self.curr_ticker])
         else:
             self.datas.load_data_with_normalization(tickers[self.curr_ticker])
         # self.curr = self.datas.data_1h.shape[0] - 100

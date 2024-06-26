@@ -10,8 +10,13 @@ from gym.spaces import Discrete, Space
 import matplotlib.pyplot as plt
 import time as TIME
 
+
+import warnings
+# 특정 경고 무시
+warnings.filterwarnings(action='ignore', category=UserWarning)
+
 # Test 날짜
-TEST_TIMESTAMP = 1527814800 * 1000
+TEST_TIMESTAMP = 1704067200 * 1000
 HELLO_TIMESTAMP = 1704067200 * 1000
 XLM_TIMESTAMP = 1527814800 * 1000 
 
@@ -635,12 +640,13 @@ class Train:
 
                 # Limit
                 # 나는 종료하고 싶은데, trade Agent가 Long을 유지하면 어차피 다시 사야함! 그래서 눈치 보는 것
-                trade_act = np.argmax(self.TradeAgent.get_action(state))
+                tact = self.TradeAgent.get_action(state)
+                trade_act = np.argmax(tact)
                 if action == 0:
-                    if act == 1 and trade_act == 0:
+                    if act == 1 and trade_act == 0 :
                         act = 0
                 if action == 1:
-                    if act == 1 and trade_act == 1:
+                    if act == 1 and trade_act == 1 :
                         act = 0
                     
                 if action == 0:
